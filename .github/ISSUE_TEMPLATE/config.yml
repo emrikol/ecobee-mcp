@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Issues are Disabled"
+    url: https://github.com/emrikol/ecobee-mcp#support-policy
+    about: This repository does not provide support. Please read the Support Policy in the README.

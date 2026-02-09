@@ -1,0 +1,50 @@
+# .github/workflows/allow-collab-prs.yml
+name: Allow only collaborator PRs
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  gatekeep:
+    # Personal repos: only OWNER or COLLABORATOR are allowed
+    if: ${{ !contains(fromJson('["OWNER","COLLABORATOR"]'), github.event.pull_request.author_association)
+            && github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment and close PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const assoc = context.payload.pull_request.author_association;
+            const pr = context.payload.pull_request.number;
+            const { owner, repo } = context.repo;
+
+            const msg = [
+              'Thanks for your interest! This repository is published as-is under the GPL-3.0 license.',
+              '',
+              '**We do not provide support, and Issues are disabled.** Pull requests are accepted only from collaborators explicitly added to this repository.',
+              '',
+              'If you are not a collaborator, please **fork this project** and continue development under the GPL. To avoid confusion, we kindly ask redistributors of modified versions to use a different project name and branding.',
+              '',
+              '## Why This Policy?',
+              '',
+              'ecobee-mcp is a personal project tailored to a specific Ecobee setup. It depends on the Ecobee API, which may change without notice, and is not designed as a general-purpose tool. Supporting all hardware configurations and API changes is beyond the scope of this project.',
+              '',
+              '---',
+              '',
+              `Your association: **${assoc}**.`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: pr,
+              body: msg
+            });
+
+            await github.rest.pulls.update({
+              owner, repo, pull_number: pr, state: 'closed'
+            });
