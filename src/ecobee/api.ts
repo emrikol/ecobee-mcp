@@ -13,6 +13,8 @@ import type {
 } from "./types.js";
 
 const ECOBEE_API_BASE = "https://api.ecobee.com/1";
+/** Ecobee status.code for an expired access token. Reported with HTTP 500, not 401. */
+const ECOBEE_TOKEN_EXPIRED = 14;
 const MAX_CONCURRENT = 2;
 
 /**
@@ -403,6 +405,16 @@ export class EcobeeApiClient {
        Test with mock HTTP server returning 500/503 after a non-retry request. */
     if (!response.ok) {
       const text = await response.text();
+
+      // An expired access token is reported as HTTP 500 with status.code 14,
+      // not as a 401, so the check above never catches it. Without this the
+      // server keeps using a stale in-memory token until it is restarted: in
+      // readonly mode it never notices that the owning app already refreshed.
+      if (!isRetry && parseEcobeeStatusCode(text) === ECOBEE_TOKEN_EXPIRED) {
+        await this.auth.handleUnauthorized();
+        return this.doRequest<T>(method, path, body, true);
+      }
+
       throw new EcobeeApiError(
         `Ecobee API error: ${response.status} ${response.statusText} - ${text}`,
         response.status,
@@ -414,6 +426,12 @@ export class EcobeeApiClient {
 
     // Ecobee API returns status.code !== 0 for logical errors
     if (data?.status?.code !== undefined && data.status.code !== 0) {
+      // Same expiry case, but returned alongside a 2xx status.
+      if (!isRetry && data.status.code === ECOBEE_TOKEN_EXPIRED) {
+        await this.auth.handleUnauthorized();
+        return this.doRequest<T>(method, path, body, true);
+      }
+
       throw new EcobeeApiError(
         `Ecobee API error: ${data.status.message} (code ${data.status.code})`,
         response.status,
@@ -444,6 +462,20 @@ export class EcobeeApiClient {
     } else {
       this.activeRequests--;
     }
+  }
+}
+
+/**
+ * Pull `status.code` out of an Ecobee error body. Returns undefined when the
+ * body is not JSON or carries no status code, so a malformed error response
+ * falls through to normal error handling rather than throwing here.
+ */
+function parseEcobeeStatusCode(text: string): number | undefined {
+  try {
+    const parsed = JSON.parse(text) as { status?: { code?: number } };
+    return parsed?.status?.code;
+  } catch {
+    return undefined;
   }
 }
 
