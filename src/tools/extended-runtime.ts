@@ -7,7 +7,7 @@ import { resolveId } from "./set-temperature.js";
 import {
   boundedString,
   finiteNumber,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -57,7 +57,7 @@ export function registerGetExtendedRuntime(
     {
       description:
         "Get near-real-time 5-minute interval runtime data (last ~15 minutes). Shows actual temps, setpoints, humidity, and equipment runtime in seconds. Updated every 15 minutes by the thermostat.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

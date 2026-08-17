@@ -5,7 +5,7 @@ import type { EcobeeCache } from "../ecobee/cache.js";
 import { resolveId } from "./set-temperature.js";
 import {
   boundedString,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -43,7 +43,7 @@ export function registerGetTechnicianInfo(
     {
       description:
         "Get registered technician/contractor information for the thermostat.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

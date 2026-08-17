@@ -6,7 +6,7 @@ import { fromEcobeeTemp } from "../ecobee/types.js";
 import {
   boundedString,
   finiteNumber,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -71,7 +71,7 @@ export function registerGetSchedule(
     {
       description:
         "Get the thermostat's program schedule, comfort profiles (home/away/sleep), and current climate.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

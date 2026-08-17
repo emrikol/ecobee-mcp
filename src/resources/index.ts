@@ -55,7 +55,7 @@ export function registerAllResources(
           {
             uri: "ecobee://thermostat/status",
             mimeType: "application/json",
-            text: JSON.stringify(data, null, 2),
+            text: JSON.stringify(data),
           },
         ],
       };
@@ -105,7 +105,7 @@ export function registerAllResources(
           {
             uri: "ecobee://thermostat/sensors",
             mimeType: "application/json",
-            text: JSON.stringify(sensors, null, 2),
+            text: JSON.stringify(sensors),
           },
         ],
       };
@@ -147,7 +147,7 @@ export function registerAllResources(
           {
             uri: "ecobee://thermostat/weather",
             mimeType: "application/json",
-            text: JSON.stringify(weather, null, 2),
+            text: JSON.stringify(weather),
           },
         ],
       };

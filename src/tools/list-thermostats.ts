@@ -4,6 +4,7 @@ import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import {
   boundedString,
+  emptyInputSchema,
   MAX_THERMOSTATS,
   readOnlyAnnotations,
   registerEcobeeTool,
@@ -35,7 +36,7 @@ export function registerListThermostats(
     {
       description:
         "List all registered Ecobee thermostats with their ID, name, and connection status.",
-      inputSchema: z.object({}),
+      inputSchema: emptyInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

@@ -10,6 +10,7 @@ import {
   mutationAnnotations,
   mutationVerificationSchema,
   optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -33,6 +34,56 @@ const readOutputSchema = z.object({
 });
 
 const updateFieldsSchema = houseDetailsSchema.partial();
+const updateInputSchema = z.object({
+  thermostatId: optionalThermostatIdSchema,
+  style: boundedString(64)
+    .optional()
+    .describe(
+      "House style: other, apartment, condominium, detached, loft, multiPlex, rowHouse, semiDetached, townhouse",
+    ),
+  size: z
+    .number()
+    .int()
+    .min(0)
+    .max(100_000)
+    .optional()
+    .describe("House size in square feet"),
+  numberOfFloors: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe("Number of floors"),
+  numberOfRooms: z
+    .number()
+    .int()
+    .min(0)
+    .max(1_000)
+    .optional()
+    .describe("Number of rooms"),
+  numberOfOccupants: z
+    .number()
+    .int()
+    .min(0)
+    .max(1_000)
+    .optional()
+    .describe("Number of occupants"),
+  age: z
+    .number()
+    .int()
+    .min(0)
+    .max(1_000)
+    .optional()
+    .describe("Age of house in years"),
+  windowEfficiency: z
+    .number()
+    .int()
+    .min(1)
+    .max(7)
+    .optional()
+    .describe("Window efficiency, 1-7"),
+});
 const mutationOutputSchema = z.object({
   thermostatId: boundedString(64),
   requestedChange: updateFieldsSchema,
@@ -54,7 +105,7 @@ export function registerGetHouseDetails(
     {
       description:
         "Get house characteristics (style, size, floors, rooms, occupants, age, window efficiency).",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema: readOutputSchema,
       annotations: readOnlyAnnotations,
     },
@@ -119,56 +170,7 @@ export function registerUpdateHouseDetails(
     {
       description:
         "Update house characteristics. Only provided fields are changed.",
-      inputSchema: z.object({
-        thermostatId: optionalThermostatIdSchema,
-        style: boundedString(64)
-          .optional()
-          .describe(
-            "House style: other, apartment, condominium, detached, loft, multiPlex, rowHouse, semiDetached, townhouse",
-          ),
-        size: z
-          .number()
-          .int()
-          .min(0)
-          .max(100_000)
-          .optional()
-          .describe("House size in square feet"),
-        numberOfFloors: z
-          .number()
-          .int()
-          .min(0)
-          .max(100)
-          .optional()
-          .describe("Number of floors"),
-        numberOfRooms: z
-          .number()
-          .int()
-          .min(0)
-          .max(1_000)
-          .optional()
-          .describe("Number of rooms"),
-        numberOfOccupants: z
-          .number()
-          .int()
-          .min(0)
-          .max(1_000)
-          .optional()
-          .describe("Number of occupants"),
-        age: z
-          .number()
-          .int()
-          .min(0)
-          .max(1_000)
-          .optional()
-          .describe("Age of house in years"),
-        windowEfficiency: z
-          .number()
-          .int()
-          .min(1)
-          .max(7)
-          .optional()
-          .describe("Window efficiency, 1-7"),
-      }),
+      inputSchema: updateInputSchema,
       outputSchema: mutationOutputSchema,
       annotations: mutationAnnotations,
     },

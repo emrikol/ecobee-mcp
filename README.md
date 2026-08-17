@@ -8,24 +8,40 @@ Version 2 is forward-only: it uses `server/discover`, advertises only MCP `2026-
 
 ## Features
 
-**24 tools** covering the full Ecobee API:
+**24 tools** covering the supported Ecobee operations. Every tool has a strict,
+bounded input schema, a bounded output schema, and an explicit safety annotation.
 
-| Read              | Write                      |
-| ----------------- | -------------------------- |
-| List thermostats  | Set temperature            |
-| Thermostat status | Set HVAC mode              |
-| Remote sensors    | Set hold (comfort profile) |
-| Weather forecast  | Resume schedule            |
-| Schedule          | Set vacation               |
-| Vacations         | Acknowledge alert          |
-| Alerts            | Send thermostat message    |
-| Runtime report    | Update comfort profile     |
-| Extended runtime  | Update house details       |
-| Demand response   | Manage thermostat groups   |
-| Utility info      |                            |
-| Technician info   |                            |
-| House details     |                            |
-| Thermostat groups |                            |
+| Tool                     | Class    | Operation                          |
+| ------------------------ | -------- | ---------------------------------- |
+| `list_thermostats`       | Read     | List registered thermostats        |
+| `get_thermostat_status`  | Read     | Read thermostat and equipment      |
+| `get_sensors`            | Read     | Read remote sensors                |
+| `get_weather`            | Read     | Read weather and forecast          |
+| `get_schedule`           | Read     | Read climates and weekly program   |
+| `list_vacations`         | Read     | List vacation events               |
+| `get_alerts`             | Read     | Read active alerts                 |
+| `get_runtime_report`     | Read     | Read interval runtime data         |
+| `get_extended_runtime`   | Read     | Read extended runtime data         |
+| `get_demand_response`    | Read     | Read demand-response events        |
+| `get_utility_info`       | Read     | Read utility metadata              |
+| `get_technician_info`    | Read     | Read technician metadata           |
+| `get_house_details`      | Read     | Read house characteristics         |
+| `list_groups`            | Read     | List thermostat groups             |
+| `set_temperature`        | Mutation | Set a temperature hold             |
+| `set_hvac_mode`          | Mutation | Change the HVAC mode               |
+| `set_hold`               | Mutation | Set a comfort-profile hold         |
+| `resume_schedule`        | Mutation | Resume the programmed schedule     |
+| `set_vacation`           | Mutation | Create, update, or delete vacation |
+| `acknowledge_alert`      | Mutation | Acknowledge an alert               |
+| `send_message`           | Mutation | Send a thermostat message          |
+| `update_comfort_profile` | Mutation | Update a comfort setting           |
+| `update_house_details`   | Mutation | Update house characteristics       |
+| `manage_group`           | Mutation | Create, update, or delete a group  |
+
+Read tools advertise `readOnlyHint: true`. Mutation tools advertise
+`readOnlyHint: false`, remain separate from reads, and return structured target,
+requested-change, and reconciliation details. A mutation is never retried when
+delivery is ambiguous.
 
 **3 resources** for quick context:
 
@@ -38,7 +54,10 @@ Version 2 is forward-only: it uses `server/discover`, advertises only MCP `2026-
 - Bearer token authentication
 - Two auth modes: `readonly` (another app manages tokens) or `full` (manages its own OAuth refresh)
 - Plugin system for custom credential providers and extra tools
-- Response caching with configurable TTL
+- 60-second read cache with in-flight request deduplication
+- Bounded deadlines, concurrency, rate-limit retries, and response sizes
+- Selective compression for large discovery and read responses
+- Opt-in, secret-safe OpenTelemetry tracing
 
 ## Ecobee API Access
 
@@ -50,7 +69,7 @@ If you have a **grandfathered API key** (registered before the portal closed), t
 
 2. **Write a credential provider plugin.** If the existing app stores tokens somewhere other than a plain JSON file (e.g., a database), write a plugin that implements the `CredentialProvider` interface to read from that source. See [Plugins](#plugins) below.
 
-This project was built to work alongside another authenticated Ecobee app that manages the full OAuth lifecycle. ecobee-mcp acts as a read-only parasite on those credentials.
+This project can work alongside another authenticated Ecobee application that manages the full OAuth lifecycle. In `readonly` mode, ecobee-mcp only consumes credentials from the configured provider.
 
 ## Prerequisites
 
@@ -91,7 +110,13 @@ MCP_AUTH_TOKEN=some-random-secret-token
 CREDENTIALS_PATH=./credentials.json
 AUTH_MODE=readonly
 # ENABLE_PLUGINS=1
+# ECOBEE_TRACE_EXPORTER=console
+# ECOBEE_TRACE_SAMPLE_RATE=0.1
 ```
+
+`MCP_AUTH_TOKEN` is strongly recommended on any network-accessible deployment.
+Tracing is disabled by default. See [Observability](docs/observability.md) before
+enabling it in production.
 
 ### 4. Run
 
@@ -134,6 +159,9 @@ await client.connect(transport);
 The v2 client still defaults to its legacy connection flow unless `versionNegotiation` is configured. A client that cannot perform `server/discover` and send the modern per-request metadata cannot consume this endpoint.
 
 The server advertises only tools and resources. It intentionally does not advertise prompts, sampling, elicitation, logging, subscriptions, experimental extensions, or Tasks.
+
+This is a forward-facing version boundary. There is no legacy handshake,
+protocol alias, or dual-stack compatibility path.
 
 ## Auth Modes
 
@@ -204,11 +232,26 @@ The `scripts/` directory contains shell scripts for deploying to a Linux server 
 ## Development
 
 ```bash
-npm test            # Run tests
-npm run test:watch  # Watch mode
-npm run lint        # Lint
-npm run lint:fix    # Lint + auto-fix
+npm test                 # Run tests
+npm run test:watch       # Watch mode
+npm run build            # Type-check and compile production code
+npm run typecheck:bench  # Type-check the benchmark harness
+npm run lint             # Lint production, test, and benchmark code
+npm run format:check     # Check formatting
+npm run benchmark        # Run deterministic local benchmarks
+npm run profile          # Capture CPU and allocation profiles
+npm run profile:analyze  # Build analysis JSON and an SVG flamegraph
+npm run profile:trace    # Capture Node trace events plus profiles
 ```
+
+The benchmark uses an injected fake Ecobee transport. It never calls the live
+Ecobee API and never performs a thermostat mutation. Generated profiles live in
+the gitignored `.artifacts/performance/` directory.
+
+See [Performance](docs/performance.md) for methodology, before/after results,
+known costs, and profiling commands. See
+[Observability](docs/observability.md) for trace configuration, span names,
+safe attributes, and exporter integration.
 
 ## Support Policy
 

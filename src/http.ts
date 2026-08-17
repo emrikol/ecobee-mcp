@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
+import { SpanKind } from "@opentelemetry/api";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler } from "@modelcontextprotocol/server";
+import compression from "compression";
 import express from "express";
 import type {
   ErrorRequestHandler,
@@ -12,9 +14,25 @@ import { MCP_PROTOCOL_VERSION, SERVICE_VERSION } from "./constants.js";
 import type { EcobeeApiClient } from "./ecobee/api.js";
 import type { EcobeeCache } from "./ecobee/cache.js";
 import type { EcobeePlugin } from "./plugins/types.js";
+import {
+  extractMcpTraceContext,
+  isTracingEnabled,
+  mcpMethod,
+  traceOperation,
+} from "./observability.js";
 import { createMcpServer } from "./server.js";
 
 const MAX_MCP_REQUEST_BYTES = 256 * 1024;
+const COMPRESSIBLE_TOOLS = new Set([
+  "get_alerts",
+  "get_demand_response",
+  "get_extended_runtime",
+  "get_runtime_report",
+  "get_schedule",
+  "get_sensors",
+  "get_weather",
+  "list_vacations",
+]);
 
 export interface HttpServiceOptions {
   api: EcobeeApiClient;
@@ -53,17 +71,60 @@ export function createHttpService(
       type: ["application/json", "application/*+json"],
     }),
   );
-
-  app.all("/mcp", (req: Request, res: Response, next: NextFunction) => {
-    if (
-      options.authToken &&
-      !matchesBearerToken(req.headers.authorization, options.authToken)
-    ) {
-      res.status(401).json({ error: "Unauthorized" });
+  const compressLargeMcpResponse = compression({
+    level: 4,
+    threshold: 1_024,
+    filter: (req, res) => {
+      const contentType = res.getHeader("content-type");
+      if (
+        typeof contentType === "string" &&
+        contentType.startsWith("text/event-stream")
+      ) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  });
+  app.use("/mcp", (req: Request, res: Response, next: NextFunction) => {
+    if (shouldCompressMcpResponse(req.body)) {
+      compressLargeMcpResponse(req, res, next);
       return;
     }
+    next();
+  });
 
-    void handleMcp(req, res, req.body).catch(next);
+  app.all("/mcp", (req: Request, res: Response, next: NextFunction) => {
+    const method = mcpMethod(req.body);
+    void traceOperation(
+      "mcp.request",
+      {
+        kind: SpanKind.SERVER,
+        parent: isTracingEnabled()
+          ? extractMcpTraceContext(req.body)
+          : undefined,
+        attributes: {
+          "http.request.method": req.method,
+          "http.route": "/mcp",
+          "mcp.method": method,
+          "mcp.protocol.version": MCP_PROTOCOL_VERSION,
+        },
+      },
+      async (span) => {
+        if (
+          options.authToken &&
+          !matchesBearerToken(req.headers.authorization, options.authToken)
+        ) {
+          span.setAttribute("mcp.authenticated", false);
+          span.setAttribute("http.response.status_code", 401);
+          res.status(401).json({ error: "Unauthorized" });
+          return;
+        }
+
+        span.setAttribute("mcp.authenticated", Boolean(options.authToken));
+        await handleMcp(req, res, req.body);
+        span.setAttribute("http.response.status_code", res.statusCode);
+      },
+    ).catch(next);
   });
 
   app.get("/health", (_req: Request, res: Response) => {
@@ -90,6 +151,23 @@ export function createHttpService(
   app.use(jsonErrorHandler);
 
   return { app, close: mcp.close };
+}
+
+function shouldCompressMcpResponse(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  const request = body as { method?: unknown; params?: unknown };
+  if (request.method === "tools/list" || request.method === "resources/read") {
+    return true;
+  }
+  if (
+    request.method !== "tools/call" ||
+    typeof request.params !== "object" ||
+    request.params === null
+  ) {
+    return false;
+  }
+  const name = (request.params as { name?: unknown }).name;
+  return typeof name === "string" && COMPRESSIBLE_TOOLS.has(name);
 }
 
 function matchesBearerToken(

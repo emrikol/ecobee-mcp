@@ -6,7 +6,7 @@ import { fromEcobeeTemp } from "../ecobee/types.js";
 import {
   boundedString,
   finiteNumber,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -49,7 +49,7 @@ export function registerGetWeather(
     {
       description:
         "Get weather conditions and forecast from the thermostat's weather station.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

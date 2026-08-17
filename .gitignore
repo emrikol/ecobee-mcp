@@ -1,4 +1,5 @@
 .claude/
+.artifacts/
 node_modules/
 dist/
 *.js.map

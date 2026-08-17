@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-08-17
+
+### Added
+
+- Added opt-in OpenTelemetry spans for MCP requests, server construction, tool execution, Ecobee requests, queue time, retries, and cache outcomes.
+- Added a deterministic fake-Ecobee performance harness with latency percentiles, throughput, CPU, heap, event-loop, wire-size, CPU-profile, allocation-profile, trace-event, and SVG flamegraph output.
+- Added performance and observability operating guides.
+
+### Changed
+
+- Cached immutable JSON Schema conversion and strict schemas shared by per-request MCP servers, removing the primary CPU and allocation hotspot.
+- Removed redundant input/output validation passes while retaining local validation, exact discovery schemas, strict inputs, redaction, and SDK validation for externally supplied results.
+- Made secret-free structured redaction copy-on-write and added a cheap fast path for ordinary text.
+- Reduced structured-result serialization and resource formatting overhead.
+- Added selective gzip compression for discovery and potentially large read results while leaving small reads and event streams uncompressed.
+- Made the default tracing path lazy so it does not load or instantiate the trace SDK unless tracing is enabled.
+
+### Tests
+
+- Added trace topology and trace-redaction tests with an in-memory OpenTelemetry exporter.
+- Added selective-compression coverage and kept the official SDK v2 protocol, schema-inventory, read/write safety, cancellation, deadline, rate-limit, refresh, and ambiguous-delivery suites intact.
+
 ## [2.0.0] - 2026-08-17
 
 ### Changed

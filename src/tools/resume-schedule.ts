@@ -13,6 +13,14 @@ import {
   thermostatControlStateSchema,
 } from "./contracts.js";
 
+const inputSchema = z.object({
+  thermostatId: optionalThermostatIdSchema,
+  resumeAll: z
+    .boolean()
+    .default(false)
+    .describe("If true, removes all events including vacation holds."),
+});
+
 const outputSchema = z.object({
   thermostatId: z.string().min(1).max(64),
   requestedChange: z.object({ resumeAll: z.boolean() }),
@@ -34,13 +42,7 @@ export function registerResumeSchedule(
     {
       description:
         "Cancel any active hold and resume the normal thermostat program schedule.",
-      inputSchema: z.object({
-        thermostatId: optionalThermostatIdSchema,
-        resumeAll: z
-          .boolean()
-          .default(false)
-          .describe("If true, removes all events including vacation holds."),
-      }),
+      inputSchema,
       outputSchema,
       annotations: destructiveMutationAnnotations,
     },

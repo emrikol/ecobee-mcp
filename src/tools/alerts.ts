@@ -8,6 +8,7 @@ import {
   MAX_EVENTS,
   mutationAnnotations,
   optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -27,6 +28,16 @@ const alertSchema = z.object({
 const readOutputSchema = z.object({
   thermostatId: boundedString(64).nullable(),
   alerts: z.array(alertSchema).max(MAX_EVENTS),
+});
+
+const acknowledgeInputSchema = z.object({
+  thermostatId: optionalThermostatIdSchema,
+  acknowledgeRef: boundedString(128).describe(
+    "The acknowledgeRef from the alert to acknowledge",
+  ),
+  ackType: z
+    .enum(["accept", "decline", "defer", "unacknowledged"])
+    .describe("How to respond to the alert"),
 });
 
 const mutationOutputSchema = z.object({
@@ -50,7 +61,7 @@ export function registerGetAlerts(
     {
       description:
         "Get active alerts for a thermostat (filter reminders, maintenance, temperature alerts, etc.).",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema: readOutputSchema,
       annotations: readOnlyAnnotations,
     },
@@ -113,15 +124,7 @@ export function registerAcknowledgeAlert(
     {
       description:
         "Acknowledge (accept, decline, or defer) an alert on the thermostat.",
-      inputSchema: z.object({
-        thermostatId: optionalThermostatIdSchema,
-        acknowledgeRef: boundedString(128).describe(
-          "The acknowledgeRef from the alert to acknowledge",
-        ),
-        ackType: z
-          .enum(["accept", "decline", "defer", "unacknowledged"])
-          .describe("How to respond to the alert"),
-      }),
+      inputSchema: acknowledgeInputSchema,
       outputSchema: mutationOutputSchema,
       annotations: mutationAnnotations,
     },

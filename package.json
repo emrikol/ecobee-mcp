@@ -1,29 +1,38 @@
 {
   "name": "ecobee-mcp",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "MCP server for Ecobee thermostat control",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "benchmark": "node --expose-gc --import tsx bench/benchmark.ts",
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/ test/",
-    "lint:fix": "eslint --fix src/ test/",
-    "format": "prettier --write src/ test/ README.md CHANGELOG.md",
-    "format:check": "prettier --check src/ test/ README.md CHANGELOG.md"
+    "typecheck:bench": "tsc -p tsconfig.bench.json",
+    "lint": "eslint src/ test/ bench/",
+    "lint:fix": "eslint --fix src/ test/ bench/",
+    "profile": "PERF_PROFILE_DIR=.artifacts/performance node --expose-gc --import tsx bench/benchmark.ts",
+    "profile:analyze": "node --import tsx bench/analyze-profile.ts",
+    "profile:trace": "PERF_PROFILE_DIR=.artifacts/performance PERF_PROFILE_LABEL=runtime-trace node --trace-events-enabled --trace-event-categories=v8,node,node.async_hooks --trace-event-file-pattern='.artifacts/performance/node-trace-${pid}.json' --expose-gc --import tsx bench/benchmark.ts",
+    "format": "prettier --write src/ test/ bench/ docs/ README.md CHANGELOG.md package.json tsconfig*.json",
+    "format:check": "prettier --check src/ test/ bench/ docs/ README.md CHANGELOG.md package.json tsconfig*.json"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/sdk-trace-node": "2.10.0",
+    "compression": "1.8.1",
     "express": "^5.1.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@modelcontextprotocol/client": "2.0.0",
+    "@types/compression": "1.8.1",
     "@types/express": "^5.0.2",
     "@types/node": "^22.15.3",
     "@vitest/coverage-v8": "^3.2.4",

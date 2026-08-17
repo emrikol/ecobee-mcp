@@ -1,6 +1,7 @@
 import type {
   CallToolResult,
   McpServer,
+  StandardSchemaWithJSON,
   ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
@@ -17,8 +18,13 @@ import {
   redactSecrets,
   redactStructuredSecrets,
 } from "../security/redaction.js";
+import { recordSpanError, traceOperation } from "../observability.js";
 
 export const MAX_TOOL_RESULT_BYTES = 256 * 1024;
+const CALL_TOOL_RESULT_JSON_OVERHEAD_BYTES = Buffer.byteLength(
+  '{"content":[{"type":"text","text":}],"structuredContent":}',
+  "utf8",
+);
 export const MAX_THERMOSTATS = 64;
 export const MAX_SENSORS = 128;
 export const MAX_EVENTS = 256;
@@ -29,6 +35,10 @@ export const thermostatIdSchema = boundedString(64)
   .min(1)
   .describe("Thermostat ID. Omit to use the first registered thermostat.");
 export const optionalThermostatIdSchema = thermostatIdSchema.optional();
+export const emptyInputSchema = z.object({});
+export const optionalThermostatInputSchema = z.object({
+  thermostatId: optionalThermostatIdSchema,
+});
 export const finiteNumber = z.number().finite().min(-1_000_000).max(1_000_000);
 export const temperatureSchema = z.number().finite().min(-50).max(150);
 export const dateSchema = z
@@ -89,6 +99,13 @@ export const mutationVerificationSchema = z.enum([
 
 type ObjectSchema = z.ZodObject;
 
+const strictInputSchemas = new WeakMap<ObjectSchema, ObjectSchema>();
+const cachedJsonSchemas = new WeakSet<ObjectSchema>();
+const cachedInputValidators = new WeakSet<ObjectSchema>();
+const cachedOutputValidators = new WeakSet<ObjectSchema>();
+const sdkValidatedInputs = new WeakSet<object>();
+const locallyValidatedOutputs = new WeakSet<object>();
+
 interface EcobeeToolConfig<
   InputSchema extends ObjectSchema,
   OutputSchema extends ObjectSchema,
@@ -101,8 +118,8 @@ interface EcobeeToolConfig<
 
 /**
  * Registers a built-in Ecobee tool with request-scoped cancellation and a
- * fixed, secret-safe error boundary. The SDK performs an additional output
- * validation pass before serializing a successful result.
+ * fixed, secret-safe error boundary. Locally parsed output is marked so the
+ * SDK does not repeat the same validation immediately before serialization.
  */
 export function registerEcobeeTool<
   InputSchema extends ObjectSchema,
@@ -114,30 +131,169 @@ export function registerEcobeeTool<
   config: EcobeeToolConfig<InputSchema, OutputSchema>,
   handler: (args: z.output<InputSchema>) => Promise<CallToolResult>,
 ): void {
-  const sdkInputSchema: z.ZodObject = config.inputSchema.strict();
+  const sdkInputSchema: z.ZodObject = strictInputSchema(config.inputSchema);
   const sdkOutputSchema: z.ZodObject = config.outputSchema;
+  cacheJsonSchema(sdkInputSchema);
+  cacheJsonSchema(sdkOutputSchema);
+  markSdkValidatedInputs(sdkInputSchema);
+  skipDuplicateOutputValidation(sdkOutputSchema);
   server.registerTool(
     name,
-    { ...config, inputSchema: sdkInputSchema, outputSchema: sdkOutputSchema },
-    async (args, ctx) => {
-      try {
-        const parsed = (await sdkInputSchema.parseAsync(
-          args,
-        )) as z.output<InputSchema>;
-        if (typeof api.withRequestSignal === "function") {
-          const result = await api.withRequestSignal(ctx.mcpReq.signal, () =>
-            handler(parsed),
-          );
-          return sanitizeToolResult(result);
-        }
-        // Supports narrow injected fakes in unit tests. Production always uses
-        // EcobeeApiClient and therefore always takes the cancellation path.
-        return sanitizeToolResult(await handler(parsed));
-      } catch (error) {
-        return toolError(publicToolError(error));
-      }
+    {
+      ...config,
+      inputSchema: sdkInputSchema,
+      outputSchema: sdkOutputSchema,
     },
+    async (args, ctx) =>
+      traceOperation(
+        "mcp.tool",
+        {
+          attributes: {
+            "mcp.tool.name": name,
+            "mcp.tool.read_only": config.annotations.readOnlyHint === true,
+          },
+        },
+        async (span) => {
+          try {
+            const parsed = (
+              typeof args === "object" &&
+              args !== null &&
+              sdkValidatedInputs.has(args)
+                ? args
+                : await sdkInputSchema.parseAsync(args)
+            ) as z.output<InputSchema>;
+            if (typeof api.withRequestSignal === "function") {
+              const result = await api.withRequestSignal(
+                ctx.mcpReq.signal,
+                () => handler(parsed),
+              );
+              span.setAttribute("mcp.tool.error", result.isError === true);
+              return sanitizeToolResult(result);
+            }
+            // Supports narrow injected fakes in unit tests. Production always
+            // uses EcobeeApiClient and therefore takes the cancellation path.
+            const result = await handler(parsed);
+            span.setAttribute("mcp.tool.error", result.isError === true);
+            return sanitizeToolResult(result);
+          } catch (error) {
+            recordSpanError(span, error);
+            span.setAttribute("mcp.tool.error", true);
+            return toolError(publicToolError(error));
+          }
+        },
+      ),
   );
+}
+
+/**
+ * The v2 HTTP adapter creates a fresh McpServer per request. Zod's Standard
+ * Schema converter otherwise rebuilds every tool's JSON Schema for every
+ * tools/list and tools/call request. Keep Zod validation semantics while
+ * memoizing only the immutable draft schemas shared by all server instances.
+ */
+function cacheJsonSchema(schema: ObjectSchema): void {
+  if (cachedJsonSchemas.has(schema)) return;
+
+  const standard = (schema as unknown as StandardSchemaWithJSON)["~standard"];
+  const inputByTarget = new Map<string, Record<string, unknown>>();
+  const outputByTarget = new Map<string, Record<string, unknown>>();
+  const cacheKey = (options: { target: string }) => options.target;
+  const originalConverter = standard.jsonSchema;
+  Object.defineProperty(standard, "jsonSchema", {
+    configurable: true,
+    enumerable: true,
+    value: {
+      input: (options: Parameters<typeof originalConverter.input>[0]) => {
+        if (options.libraryOptions !== undefined) {
+          return originalConverter.input(options);
+        }
+        const key = cacheKey(options);
+        let converted = inputByTarget.get(key);
+        if (!converted) {
+          converted = originalConverter.input(options);
+          inputByTarget.set(key, converted);
+        }
+        return converted;
+      },
+      output: (options: Parameters<typeof originalConverter.output>[0]) => {
+        if (options.libraryOptions !== undefined) {
+          return originalConverter.output(options);
+        }
+        const key = cacheKey(options);
+        let converted = outputByTarget.get(key);
+        if (!converted) {
+          converted = originalConverter.output(options);
+          outputByTarget.set(key, converted);
+        }
+        return converted;
+      },
+    },
+    writable: true,
+  });
+  cachedJsonSchemas.add(schema);
+}
+
+function markSdkValidatedInputs(schema: ObjectSchema): void {
+  if (cachedInputValidators.has(schema)) return;
+  const standard = (schema as unknown as StandardSchemaWithJSON)["~standard"];
+  const originalValidate = standard.validate;
+  Object.defineProperty(standard, "validate", {
+    configurable: true,
+    enumerable: true,
+    value: (value: unknown, options: unknown) => {
+      const result = originalValidate(value, options as never);
+      return result instanceof Promise
+        ? result.then(markValidatedInput)
+        : markValidatedInput(result);
+    },
+    writable: true,
+  });
+  cachedInputValidators.add(schema);
+}
+
+function markValidatedInput<Result>(result: Result): Result {
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    "value" in result &&
+    typeof result.value === "object" &&
+    result.value !== null
+  ) {
+    sdkValidatedInputs.add(result.value);
+  }
+  return result;
+}
+
+function skipDuplicateOutputValidation(schema: ObjectSchema): void {
+  if (cachedOutputValidators.has(schema)) return;
+  const standard = (schema as unknown as StandardSchemaWithJSON)["~standard"];
+  const originalValidate = standard.validate;
+  Object.defineProperty(standard, "validate", {
+    configurable: true,
+    enumerable: true,
+    value: (value: unknown, options: unknown) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        locallyValidatedOutputs.has(value)
+      ) {
+        return { value };
+      }
+      return originalValidate(value, options as never);
+    },
+    writable: true,
+  });
+  cachedOutputValidators.add(schema);
+}
+
+function strictInputSchema<Schema extends ObjectSchema>(
+  schema: Schema,
+): Schema {
+  const existing = strictInputSchemas.get(schema);
+  if (existing) return existing as Schema;
+  const strict = schema.strict() as Schema;
+  strictInputSchemas.set(schema, strict);
+  return strict;
 }
 
 export function structuredResult<Schema extends ObjectSchema>(
@@ -146,18 +302,41 @@ export function structuredResult<Schema extends ObjectSchema>(
   textContent?: unknown,
 ): CallToolResult {
   const parsed = schema.parse(value) as Record<string, unknown>;
-  const text =
+  locallyValidatedOutputs.add(parsed);
+  const structuredJson = JSON.stringify(parsed);
+  let text =
     typeof textContent === "string"
       ? textContent
-      : JSON.stringify(textContent ?? parsed, null, 2);
-  if (Buffer.byteLength(text, "utf8") > MAX_TOOL_RESULT_BYTES) {
-    throw new EcobeeResponseLimitError(MAX_TOOL_RESULT_BYTES);
-  }
-
-  return {
+      : textContent == null
+        ? structuredJson
+        : (JSON.stringify(textContent) ?? structuredJson);
+  let result: CallToolResult = {
     content: [{ type: "text", text }],
     structuredContent: parsed,
   };
+  let resultBytes = serializedResultBytes(text, structuredJson);
+  if (resultBytes > MAX_TOOL_RESULT_BYTES && typeof textContent !== "string") {
+    text =
+      "Structured Ecobee result returned; use structuredContent for the complete validated data.";
+    result = {
+      content: [{ type: "text", text }],
+      structuredContent: parsed,
+    };
+    resultBytes = serializedResultBytes(text, structuredJson);
+  }
+  if (resultBytes > MAX_TOOL_RESULT_BYTES) {
+    throw new EcobeeResponseLimitError(MAX_TOOL_RESULT_BYTES);
+  }
+
+  return result;
+}
+
+function serializedResultBytes(text: string, structuredJson: string): number {
+  return (
+    CALL_TOOL_RESULT_JSON_OVERHEAD_BYTES +
+    Buffer.byteLength(JSON.stringify(text), "utf8") +
+    Buffer.byteLength(structuredJson, "utf8")
+  );
 }
 
 export async function readControlState(

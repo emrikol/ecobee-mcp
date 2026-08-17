@@ -6,7 +6,7 @@ import {
   boundedString,
   finiteNumber,
   MAX_SENSORS,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -41,7 +41,7 @@ export function registerGetSensors(
     {
       description:
         "Get all remote sensor readings including temperature, humidity, and occupancy for a thermostat.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

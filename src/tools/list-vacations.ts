@@ -7,7 +7,7 @@ import {
   boundedString,
   finiteNumber,
   MAX_EVENTS,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -42,7 +42,7 @@ export function registerListVacations(
     {
       description:
         "List all scheduled vacation events for a thermostat, including dates, temperatures, and whether currently running.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

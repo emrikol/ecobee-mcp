@@ -12,6 +12,14 @@ import {
   structuredResult,
 } from "./contracts.js";
 
+const inputSchema = z.object({
+  thermostatId: optionalThermostatIdSchema,
+  text: boundedString(500)
+    .min(1)
+    .max(500)
+    .describe("Message text to display on the thermostat (max 500 characters)"),
+});
+
 const outputSchema = z.object({
   thermostatId: boundedString(64),
   requestedChange: z.object({
@@ -33,15 +41,7 @@ export function registerSendMessage(
     {
       description:
         "Display a text message on the thermostat screen. Messages are limited to 500 characters.",
-      inputSchema: z.object({
-        thermostatId: optionalThermostatIdSchema,
-        text: boundedString(500)
-          .min(1)
-          .max(500)
-          .describe(
-            "Message text to display on the thermostat (max 500 characters)",
-          ),
-      }),
+      inputSchema,
       outputSchema,
       annotations: mutationAnnotations,
     },

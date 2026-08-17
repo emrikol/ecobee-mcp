@@ -5,10 +5,12 @@ import { EcobeeCache } from "./ecobee/cache.js";
 import { FileCredentialProvider } from "./credentials/file-provider.js";
 import { createHttpService } from "./http.js";
 import { loadPlugins } from "./plugins/loader.js";
+import { configureTracing } from "./observability.js";
 import type { CredentialProvider } from "./credentials/provider.js";
 import type { AuthMode } from "./ecobee/auth.js";
 
 async function main(): Promise<void> {
+  const tracing = await configureTracing();
   const port = parsePort(process.env.PORT);
   const authToken = process.env.MCP_AUTH_TOKEN;
   const credentialsPath = process.env.CREDENTIALS_PATH;
@@ -40,6 +42,9 @@ async function main(): Promise<void> {
     console.log(
       `[main] MCP bearer auth: ${authToken ? "enabled" : "disabled"}`,
     );
+    console.log(
+      `[main] OpenTelemetry tracing: ${tracing.enabled ? "enabled" : "disabled"}`,
+    );
     console.log(`[main] Plugins loaded: ${plugins.length}`);
   });
 
@@ -49,6 +54,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     console.log("[main] Shutting down");
     await service.close();
+    await tracing.shutdown();
     listener.close((error) => {
       process.exit(error ? 1 : 0);
     });

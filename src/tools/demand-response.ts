@@ -8,7 +8,7 @@ import {
   boundedString,
   finiteNumber,
   MAX_EVENTS,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -47,7 +47,7 @@ export function registerGetDemandResponse(
     {
       description:
         "List demand response (DR) events from your utility's eco+ program. Shows active and upcoming DR events with their temperature adjustments and duty cycle settings.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

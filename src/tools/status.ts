@@ -6,7 +6,7 @@ import { fromEcobeeTemp } from "../ecobee/types.js";
 import {
   boundedString,
   finiteNumber,
-  optionalThermostatIdSchema,
+  optionalThermostatInputSchema,
   readOnlyAnnotations,
   registerEcobeeTool,
   structuredResult,
@@ -54,7 +54,7 @@ export function registerGetThermostatStatus(
     {
       description:
         "Get current thermostat status including temperature, humidity, HVAC mode, set points, running equipment, and any active holds.",
-      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      inputSchema: optionalThermostatInputSchema,
       outputSchema,
       annotations: readOnlyAnnotations,
     },

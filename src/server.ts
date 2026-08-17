@@ -14,6 +14,7 @@ import type { EcobeeCache } from "./ecobee/cache.js";
 import type { EcobeePlugin } from "./plugins/types.js";
 import { registerAllTools } from "./tools/index.js";
 import { registerAllResources } from "./resources/index.js";
+import { traceSync } from "./observability.js";
 
 /**
  * Create a configured MCP server instance.
@@ -24,35 +25,45 @@ export function createMcpServer(
   cache: EcobeeCache,
   plugins: EcobeePlugin[] = [],
 ): McpServer {
-  const server = new McpServer(
+  return traceSync(
+    "mcp.server.create",
     {
-      name: SERVICE_NAME,
-      version: SERVICE_VERSION,
+      "mcp.protocol.version": MCP_PROTOCOL_VERSION,
+      "mcp.tools.count": 24,
+      "mcp.resources.count": 3,
     },
-    {
-      supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
-      capabilities: {
-        tools: { listChanged: false },
-        resources: { listChanged: false },
-      },
+    () => {
+      const server = new McpServer(
+        {
+          name: SERVICE_NAME,
+          version: SERVICE_VERSION,
+        },
+        {
+          supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
+          capabilities: {
+            tools: { listChanged: false },
+            resources: { listChanged: false },
+          },
+        },
+      );
+
+      // Register built-in tools and resources
+      registerAllTools(server, api, cache);
+      registerAllResources(server, api, cache);
+
+      // Register plugin tools and resources
+      for (const plugin of plugins) {
+        if (plugin.registerTools) {
+          plugin.registerTools(server, api, cache);
+          console.log("[server] Registered plugin tools");
+        }
+        if (plugin.registerResources) {
+          plugin.registerResources(server, cache);
+          console.log("[server] Registered plugin resources");
+        }
+      }
+
+      return server;
     },
   );
-
-  // Register built-in tools and resources
-  registerAllTools(server, api, cache);
-  registerAllResources(server, api, cache);
-
-  // Register plugin tools and resources
-  for (const plugin of plugins) {
-    if (plugin.registerTools) {
-      plugin.registerTools(server, api, cache);
-      console.log("[server] Registered plugin tools");
-    }
-    if (plugin.registerResources) {
-      plugin.registerResources(server, cache);
-      console.log("[server] Registered plugin resources");
-    }
-  }
-
-  return server;
 }

@@ -148,6 +148,31 @@ describe("modern MCP HTTP endpoint", () => {
     );
   });
 
+  it("compresses large discovery responses without taxing small reads", async () => {
+    const harness = await startHarness();
+    const toolsResponse = await fetch(harness.endpoint, {
+      method: "POST",
+      headers: modernHeaders("tools/list", undefined, AUTH_TOKEN),
+      body: modernBody(1, "tools/list", {}),
+    });
+    expect(toolsResponse.status).toBe(200);
+    expect(toolsResponse.headers.get("content-encoding")).toBe("gzip");
+    expect(
+      (await toolsResponse.json()) as { result?: { tools?: unknown[] } },
+    ).toMatchObject({ result: { tools: expect.any(Array) } });
+
+    const statusResponse = await fetch(harness.endpoint, {
+      method: "POST",
+      headers: modernHeaders("tools/call", "get_thermostat_status", AUTH_TOKEN),
+      body: modernBody(2, "tools/call", {
+        name: "get_thermostat_status",
+        arguments: {},
+      }),
+    });
+    expect(statusResponse.status).toBe(200);
+    expect(statusResponse.headers.get("content-encoding")).toBeNull();
+  });
+
   it("executes a structured read with the official v2 client", async () => {
     const harness = await startHarness();
     const client = await connectModern(harness.endpoint);
@@ -624,6 +649,41 @@ function canonicalJson(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`)
     .join(",")}}`;
+}
+
+function modernBody(
+  id: number,
+  method: string,
+  params: Record<string, unknown>,
+): string {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method,
+    params: {
+      ...params,
+      _meta: {
+        [PROTOCOL_VERSION_META_KEY]: MCP_PROTOCOL_VERSION,
+        [CLIENT_CAPABILITIES_META_KEY]: {},
+      },
+    },
+  });
+}
+
+function modernHeaders(
+  method: string,
+  name: string | undefined,
+  token: string,
+): Record<string, string> {
+  return {
+    accept: "application/json, text/event-stream",
+    "accept-encoding": "gzip",
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+    "mcp-method": method,
+    "mcp-protocol-version": MCP_PROTOCOL_VERSION,
+    ...(name ? { "mcp-name": name } : {}),
+  };
 }
 
 async function serializeResponse(response: Response): Promise<string> {

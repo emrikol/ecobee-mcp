@@ -14,6 +14,10 @@ import {
 } from "./contracts.js";
 
 const modeSchema = z.enum(["heat", "cool", "auto", "off", "auxHeatOnly"]);
+const inputSchema = z.object({
+  thermostatId: optionalThermostatIdSchema,
+  mode: modeSchema.describe("The HVAC mode to set"),
+});
 const outputSchema = z.object({
   thermostatId: z.string().min(1).max(64),
   requestedChange: z.object({ mode: modeSchema }),
@@ -35,10 +39,7 @@ export function registerSetMode(
     {
       description:
         "Change the thermostat's HVAC mode (heat, cool, auto, off, or auxHeatOnly).",
-      inputSchema: z.object({
-        thermostatId: optionalThermostatIdSchema,
-        mode: modeSchema.describe("The HVAC mode to set"),
-      }),
+      inputSchema,
       outputSchema,
       annotations: mutationAnnotations,
     },

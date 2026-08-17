@@ -5,6 +5,7 @@ import type { EcobeeCache } from "../ecobee/cache.js";
 import {
   boundedString,
   destructiveMutationAnnotations,
+  emptyInputSchema,
   MAX_THERMOSTATS,
   readOnlyAnnotations,
   registerEcobeeTool,
@@ -48,7 +49,7 @@ export function registerListGroups(
     {
       description:
         "List all thermostat groups. Groups synchronize settings across multiple thermostats.",
-      inputSchema: z.object({}),
+      inputSchema: emptyInputSchema,
       outputSchema: listOutputSchema,
       annotations: readOnlyAnnotations,
     },
