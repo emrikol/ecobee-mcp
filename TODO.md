@@ -8,15 +8,15 @@ architecture decision, not unfinished migration work.
 
 ### Current baseline (2026-08-17)
 
-- Production is a bare-metal systemd service using Node 20 and the official
-  TypeScript MCP SDK.
+- Production is a bare-metal systemd service using Node 20 and the pinned
+  performance fork of the official TypeScript MCP SDK.
 - The Pi has 7.6 GiB RAM with approximately 6.1 GiB available and no observed
   swap use or memory pressure.
 - Ecobee MCP holds approximately 98–100 MiB RSS after normal use, including
   roughly 58–60 MiB anonymous memory.
 - It is the only Node process on the Pi.
-- The deterministic fake-transport benchmark, complete test suite, and current
-  deployment are healthy at commit `a30f4f3aa6af6d2db7a9ba4d9e877e005ea977fa`.
+- The deterministic fake-transport benchmark and complete test suite remain
+  the parity baseline for release 2.3.0.
 
 ### Reconsider Rust when any trigger is met
 

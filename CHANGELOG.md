@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-08-17
+
+### Changed
+
+- Replaced the npm-published MCP server, Node adapter, and core runtime with
+  pinned packages built from the performance fork at commit
+  `346fdcc5e6be5c2b2a92b9043dc1d7ec41d570f9`.
+- Committed the three pinned SDK tarballs with source, checksum, license, and
+  rebuild documentation. Production deployment now syncs those artifacts
+  before its locked npm install.
+- Kept the official `@modelcontextprotocol/client@2.0.0` as the independent
+  development and protocol-verification client.
+
+### Performance
+
+- Across seven fresh deterministic runs, median throughput improved by 11.0%
+  for discovery, 39.3% for sequential cached status, 54.3% for concurrent
+  cached status, and 5.2% for full-day runtime intervals. The SDK-independent
+  512 KiB Ecobee transport probe was unchanged.
+- The sampled full workload used 23.9% less CPU. A focused 20,000-request SDK
+  profile reduced median hot wall time by 69.3%, hot CPU time by 68.6%,
+  retained heap by 96.8%, and retained RSS by 55.8%.
+
+### Tests
+
+- Added pinned-package checksum and file-dependency coverage while retaining
+  the complete modern protocol, schema, safety, OAuth, and cancellation suite.
+
 ## [2.2.0] - 2026-08-17
 
 ### Changed

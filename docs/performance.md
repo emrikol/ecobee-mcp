@@ -70,6 +70,41 @@ code in the final profile. Avoiding `Object.entries()` inside the exact byte
 counter also removed 117 MiB of transient sampled allocation from an interim
 implementation.
 
+### 2.3.0 SDK hot-path fork
+
+Version 2.3.0 uses the performance fork of the official TypeScript SDK at
+commit `346fdcc5e6be5c2b2a92b9043dc1d7ec41d570f9`. These results are medians of
+seven fresh, unprofiled processes per candidate on Node.js 22.19.0, macOS
+arm64, with `PERF_REQUEST_SCALE=2`:
+
+| Scenario                      | Official req/s | Fork req/s | Change | Official p50 | Fork p50 |
+| ----------------------------- | -------------: | ---------: | -----: | -----------: | -------: |
+| Tool discovery                |          789.3 |      876.4 | +11.0% |      1.21 ms |  1.11 ms |
+| Cached thermostat status      |        2,229.1 |    3,104.6 | +39.3% |      0.39 ms |  0.27 ms |
+| Cached status, concurrent     |        3,055.4 |    4,715.0 | +54.3% |      5.08 ms |  3.00 ms |
+| Full-day unsummarized runtime |          325.2 |      342.0 |  +5.2% |      3.08 ms |  2.92 ms |
+| 512 KiB chunked transport     |          982.9 |      980.0 |  -0.3% |      0.98 ms |  0.98 ms |
+
+The unchanged Ecobee transport probe is outside the SDK request path and acts
+as a control. Wire sizes and all canonical discovery schemas were also
+unchanged.
+
+The identical sampled workload fell from 5.156 to 3.922 CPU seconds, a 23.9%
+reduction. Schema-conversion and header-scan frames that previously consumed
+about 205 sampled CPU milliseconds and 167 MiB of sampled allocation no longer
+appear as per-request costs.
+
+The fork's focused server profile ran 20,000 modern `tools/call` requests in
+each of seven fresh processes. Median hot wall time fell from 109.74 to 33.67
+microseconds per request, and hot CPU time fell from 177.78 to 55.86
+microseconds per request. Post-GC retained heap fell from 52.1 to 1.7 MiB and
+retained RSS from 283.7 to 125.3 MiB for that synthetic workload.
+
+Cold root-package import memory was effectively unchanged. Ecobee uses the
+official Node adapter, which imports the server package root; switching only
+Ecobee's direct imports to the fork's narrower `/runtime` entry would therefore
+load both entries and would not reduce the deployed baseline.
+
 ## Production memory baseline
 
 The deployed service is a bare-metal systemd process on an 8 GiB Raspberry Pi
@@ -88,8 +123,8 @@ workloads by 9–76% and 19–69%, respectively. A 64 MiB old-generation limit
 provided no material savings. No V8 memory flag is deployed because each
 useful RSS reduction cost substantially more CPU and latency than it saved.
 
-The official MCP SDK, its schema registration, and the Node/V8 runtime account
-for most of the process baseline. The application-owned duplicate validation,
+The MCP SDK, its schema registration, and the Node/V8 runtime account for most
+of the process baseline. The application-owned duplicate validation,
 serialization, and telemetry costs found in the profiles have already been
 removed. A Rust rewrite is therefore deferred until memory becomes an actual
 constraint; [the future-work plan](../TODO.md) defines the triggers and parity
