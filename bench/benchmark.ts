@@ -64,6 +64,8 @@ const client = new Client(
 await client.connect(new StreamableHTTPClientTransport(endpoint));
 await client.listTools();
 await client.callTool({ name: "get_thermostat_status", arguments: {} });
+globalThis.gc?.();
+const afterWarmupMemory = processMemorySnapshot();
 
 const profiler = profileDir ? createPerformanceProfiler() : undefined;
 if (profiler && profileDir) {
@@ -75,6 +77,7 @@ const scenarios: ScenarioResult[] = [];
 let wireSizes:
   | Record<string, { contentEncoding: string; responseBytes: number }>
   | undefined;
+let afterWorkloadMemory: ReturnType<typeof processMemorySnapshot> | undefined;
 try {
   scenarios.push(
     await runScenario("tools_list_sequential", 400 * requestScale, 1, () =>
@@ -148,6 +151,8 @@ try {
       },
     }),
   };
+  globalThis.gc?.();
+  afterWorkloadMemory = processMemorySnapshot();
 } finally {
   if (profiler && profileDir) {
     const profiles = await profiler.stop();
@@ -171,6 +176,10 @@ const report = {
   platform: `${process.platform}-${process.arch}`,
   protocolVersion: MCP_PROTOCOL_VERSION,
   requestScale,
+  processMemory: {
+    afterWarmup: afterWarmupMemory,
+    afterWorkload: afterWorkloadMemory,
+  },
   scenarios,
   wireSizes,
 };
@@ -381,6 +390,21 @@ function percentile(sorted: number[], value: number): number {
 
 function round(value: number): number {
   return Math.round(value * 1_000) / 1_000;
+}
+
+function processMemorySnapshot(): {
+  rssBytes: number;
+  heapUsedBytes: number;
+  externalBytes: number;
+  arrayBuffersBytes: number;
+} {
+  const usage = process.memoryUsage();
+  return {
+    rssBytes: usage.rss,
+    heapUsedBytes: usage.heapUsed,
+    externalBytes: usage.external,
+    arrayBuffersBytes: usage.arrayBuffers,
+  };
 }
 
 function boundedInteger(

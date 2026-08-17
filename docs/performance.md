@@ -105,13 +105,22 @@ official Node adapter, which imports the server package root; switching only
 Ecobee's direct imports to the fork's narrower `/runtime` entry would therefore
 load both entries and would not reduce the deployed baseline.
 
+The complete Ecobee harness does retain more baseline memory with the fork.
+Across seven fresh post-GC runs, median RSS after discovery and one cached read
+increased from 205.7 to 215.9 MiB; after the scale-2 workload it increased from
+390.8 to 407.6 MiB. Median used heap increased by 6.3 MiB after warmup and 6.7
+MiB after the workload. Those absolute values include the TypeScript loader,
+official client, fixtures, and benchmark machinery and are not production
+footprints, but the paired delta is meaningful.
+
 ## Production memory baseline
 
 The deployed service is a bare-metal systemd process on an 8 GiB Raspberry Pi
-running Node 20. After normal discovery and read traffic, it holds approximately
-98–100 MiB RSS, including roughly 58–60 MiB of anonymous memory. RSS also
-counts clean file-backed pages that the kernel can reclaim, so it is not the
-same as memory uniquely unavailable to other processes.
+running Node 20. Before 2.3.0 it held approximately 98–100 MiB RSS, including
+roughly 58–60 MiB of anonymous memory. After the performance-fork deployment,
+the same post-discovery sample settled near 110 MiB RSS with about 70 MiB
+anonymous. RSS also counts clean file-backed pages that the kernel can reclaim,
+so it is not the same as memory uniquely unavailable to other processes.
 
 At measurement time, Ecobee MCP was the Pi's only Node process. The host had
 approximately 6.1 GiB available, no swap use, and no observed memory pressure.
@@ -187,7 +196,8 @@ npm run profile:analyze -- runtime-trace
 Set `PERF_REQUEST_SCALE` from 1 through 20 to lengthen all scenarios. The
 benchmark emits throughput, min/p50/p95/p99/max/mean latency, CPU time,
 event-loop utilization, event-loop delay, post-GC heap delta, decoded response
-size, and compressed wire size.
+size, compressed wire size, and post-GC process memory after warmup and after
+the complete workload.
 
 Generated files are gitignored under `.artifacts/performance/`:
 

@@ -27,11 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The sampled full workload used 23.9% less CPU. A focused 20,000-request SDK
   profile reduced median hot wall time by 69.3%, hot CPU time by 68.6%,
   retained heap by 96.8%, and retained RSS by 55.8%.
+- The speedup trades approximately 10 MiB of additional post-warmup application
+  RSS. The deployed Pi settles near 110 MiB RSS with about 70 MiB anonymous and
+  retains over 6 GiB of available system memory.
 
 ### Tests
 
 - Added pinned-package checksum and file-dependency coverage while retaining
   the complete modern protocol, schema, safety, OAuth, and cancellation suite.
+- Added deterministic post-GC process-memory snapshots after harness warmup and
+  after the complete workload.
 
 ## [2.2.0] - 2026-08-17
 

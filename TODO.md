@@ -12,8 +12,8 @@ architecture decision, not unfinished migration work.
   performance fork of the official TypeScript MCP SDK.
 - The Pi has 7.6 GiB RAM with approximately 6.1 GiB available and no observed
   swap use or memory pressure.
-- Ecobee MCP holds approximately 98–100 MiB RSS after normal use, including
-  roughly 58–60 MiB anonymous memory.
+- Ecobee MCP holds approximately 110 MiB RSS after normal use with the SDK
+  performance fork, including roughly 70 MiB anonymous memory.
 - It is the only Node process on the Pi.
 - The deterministic fake-transport benchmark and complete test suite remain
   the parity baseline for release 2.3.0.
