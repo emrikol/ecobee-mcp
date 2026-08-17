@@ -42,11 +42,15 @@ describe("get_sensors tool", () => {
       signal,
     );
 
-    const data = parseResult(result) as Array<{
-      name: string;
-      temperature: number;
-      occupancy: string;
-    }>;
+    const data = (
+      parseResult(result) as {
+        sensors: Array<{
+          name: string;
+          temperature: number;
+          occupancy: string;
+        }>;
+      }
+    ).sensors;
     expect(data).toHaveLength(1);
     expect(data[0].name).toBe("Living Room");
     expect(data[0].temperature).toBe(71.5);
@@ -99,12 +103,16 @@ describe("get_sensors tool", () => {
       signal,
     );
 
-    const data = parseResult(result) as Array<{
-      name: string;
-      temperature: number;
-      humidity: number;
-      occupancy: boolean;
-    }>;
+    const data = (
+      parseResult(result) as {
+        sensors: Array<{
+          name: string;
+          temperature: number;
+          humidity: number;
+          occupancy: boolean;
+        }>;
+      }
+    ).sensors;
     expect(data[0].humidity).toBe(55);
     expect(data[0].occupancy).toBe(false);
     expect(data[0].temperature).toBe(68);

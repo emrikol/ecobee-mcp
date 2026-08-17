@@ -95,10 +95,10 @@ describe("get_runtime_report tool", () => {
     );
 
     const data = parseResult(result) as {
-      intervals: number;
+      intervalCount: number;
       data: Array<Record<string, string>>;
     };
-    expect(data.intervals).toBe(2);
+    expect(data.intervalCount).toBe(2);
     expect(data.data).toHaveLength(2);
   });
 

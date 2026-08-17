@@ -14,13 +14,10 @@ import {
   EcobeeTimeoutError,
 } from "../ecobee/api.js";
 import { fromEcobeeTemp } from "../ecobee/types.js";
-import {
-  redactSecrets,
-  redactStructuredSecrets,
-} from "../security/redaction.js";
-import { recordSpanError, traceOperation } from "../observability.js";
 
 export const MAX_TOOL_RESULT_BYTES = 256 * 1024;
+const STRUCTURED_RESULT_TEXT =
+  "Structured Ecobee result returned; use structuredContent for the complete validated data.";
 const CALL_TOOL_RESULT_JSON_OVERHEAD_BYTES = Buffer.byteLength(
   '{"content":[{"type":"text","text":}],"structuredContent":}',
   "utf8",
@@ -118,8 +115,8 @@ interface EcobeeToolConfig<
 
 /**
  * Registers a built-in Ecobee tool with request-scoped cancellation and a
- * fixed, secret-safe error boundary. Locally parsed output is marked so the
- * SDK does not repeat the same validation immediately before serialization.
+ * fixed public error boundary. Locally parsed output is marked so the SDK does
+ * not repeat the same validation immediately before serialization.
  */
 export function registerEcobeeTool<
   InputSchema extends ObjectSchema,
@@ -144,44 +141,27 @@ export function registerEcobeeTool<
       inputSchema: sdkInputSchema,
       outputSchema: sdkOutputSchema,
     },
-    async (args, ctx) =>
-      traceOperation(
-        "mcp.tool",
-        {
-          attributes: {
-            "mcp.tool.name": name,
-            "mcp.tool.read_only": config.annotations.readOnlyHint === true,
-          },
-        },
-        async (span) => {
-          try {
-            const parsed = (
-              typeof args === "object" &&
-              args !== null &&
-              sdkValidatedInputs.has(args)
-                ? args
-                : await sdkInputSchema.parseAsync(args)
-            ) as z.output<InputSchema>;
-            if (typeof api.withRequestSignal === "function") {
-              const result = await api.withRequestSignal(
-                ctx.mcpReq.signal,
-                () => handler(parsed),
-              );
-              span.setAttribute("mcp.tool.error", result.isError === true);
-              return sanitizeToolResult(result);
-            }
-            // Supports narrow injected fakes in unit tests. Production always
-            // uses EcobeeApiClient and therefore takes the cancellation path.
-            const result = await handler(parsed);
-            span.setAttribute("mcp.tool.error", result.isError === true);
-            return sanitizeToolResult(result);
-          } catch (error) {
-            recordSpanError(span, error);
-            span.setAttribute("mcp.tool.error", true);
-            return toolError(publicToolError(error));
-          }
-        },
-      ),
+    async (args, ctx) => {
+      try {
+        const parsed = (
+          typeof args === "object" &&
+          args !== null &&
+          sdkValidatedInputs.has(args)
+            ? args
+            : await sdkInputSchema.parseAsync(args)
+        ) as z.output<InputSchema>;
+        if (typeof api.withRequestSignal === "function") {
+          return await api.withRequestSignal(ctx.mcpReq.signal, () =>
+            handler(parsed),
+          );
+        }
+        // Supports narrow injected fakes in unit tests. Production always uses
+        // EcobeeApiClient and therefore takes the cancellation path.
+        return await handler(parsed);
+      } catch (error) {
+        return toolError(publicToolError(error));
+      }
+    },
   );
 }
 
@@ -304,26 +284,13 @@ export function structuredResult<Schema extends ObjectSchema>(
   const parsed = schema.parse(value) as Record<string, unknown>;
   locallyValidatedOutputs.add(parsed);
   const structuredJson = JSON.stringify(parsed);
-  let text =
-    typeof textContent === "string"
-      ? textContent
-      : textContent == null
-        ? structuredJson
-        : (JSON.stringify(textContent) ?? structuredJson);
-  let result: CallToolResult = {
+  const text =
+    typeof textContent === "string" ? textContent : STRUCTURED_RESULT_TEXT;
+  const result: CallToolResult = {
     content: [{ type: "text", text }],
     structuredContent: parsed,
   };
-  let resultBytes = serializedResultBytes(text, structuredJson);
-  if (resultBytes > MAX_TOOL_RESULT_BYTES && typeof textContent !== "string") {
-    text =
-      "Structured Ecobee result returned; use structuredContent for the complete validated data.";
-    result = {
-      content: [{ type: "text", text }],
-      structuredContent: parsed,
-    };
-    resultBytes = serializedResultBytes(text, structuredJson);
-  }
+  const resultBytes = serializedResultBytes(text, structuredJson);
   if (resultBytes > MAX_TOOL_RESULT_BYTES) {
     throw new EcobeeResponseLimitError(MAX_TOOL_RESULT_BYTES);
   }
@@ -395,26 +362,8 @@ export async function reconcileControlState(
 
 export function toolError(message: string): CallToolResult {
   return {
-    content: [{ type: "text", text: redactSecrets(message).slice(0, 512) }],
+    content: [{ type: "text", text: message.slice(0, 512) }],
     isError: true,
-  };
-}
-
-function sanitizeToolResult(result: CallToolResult): CallToolResult {
-  return {
-    ...result,
-    content: result.content.map((content) =>
-      content.type === "text"
-        ? { ...content, text: redactSecrets(content.text) }
-        : content,
-    ),
-    ...(result.structuredContent === undefined
-      ? {}
-      : {
-          structuredContent: redactStructuredSecrets(
-            result.structuredContent,
-          ) as Record<string, unknown>,
-        }),
   };
 }
 

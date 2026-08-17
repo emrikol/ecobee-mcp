@@ -57,7 +57,7 @@ delivery is ambiguous.
 - 60-second read cache with in-flight request deduplication
 - Bounded deadlines, concurrency, rate-limit retries, and response sizes
 - Selective compression for large discovery and read responses
-- Opt-in, secret-safe OpenTelemetry tracing
+- Development-only CPU, allocation, trace-event, and flamegraph tooling
 
 ## Ecobee API Access
 
@@ -110,13 +110,9 @@ MCP_AUTH_TOKEN=some-random-secret-token
 CREDENTIALS_PATH=./credentials.json
 AUTH_MODE=readonly
 # ENABLE_PLUGINS=1
-# ECOBEE_TRACE_EXPORTER=console
-# ECOBEE_TRACE_SAMPLE_RATE=0.1
 ```
 
 `MCP_AUTH_TOKEN` is strongly recommended on any network-accessible deployment.
-Tracing is disabled by default. See [Observability](docs/observability.md) before
-enabling it in production.
 
 ### 4. Run
 
@@ -250,8 +246,8 @@ the gitignored `.artifacts/performance/` directory.
 
 See [Performance](docs/performance.md) for methodology, before/after results,
 known costs, and profiling commands. See
-[Observability](docs/observability.md) for trace configuration, span names,
-safe attributes, and exporter integration.
+[Development diagnostics](docs/observability.md) for local trace and profile
+artifacts. Production contains no telemetry instrumentation or exporter.
 
 ## Support Policy
 

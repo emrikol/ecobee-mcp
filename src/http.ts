@@ -1,5 +1,4 @@
 import { timingSafeEqual } from "node:crypto";
-import { SpanKind } from "@opentelemetry/api";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import compression from "compression";
@@ -14,12 +13,6 @@ import { MCP_PROTOCOL_VERSION, SERVICE_VERSION } from "./constants.js";
 import type { EcobeeApiClient } from "./ecobee/api.js";
 import type { EcobeeCache } from "./ecobee/cache.js";
 import type { EcobeePlugin } from "./plugins/types.js";
-import {
-  extractMcpTraceContext,
-  isTracingEnabled,
-  mcpMethod,
-  traceOperation,
-} from "./observability.js";
 import { createMcpServer } from "./server.js";
 
 const MAX_MCP_REQUEST_BYTES = 256 * 1024;
@@ -94,37 +87,15 @@ export function createHttpService(
   });
 
   app.all("/mcp", (req: Request, res: Response, next: NextFunction) => {
-    const method = mcpMethod(req.body);
-    void traceOperation(
-      "mcp.request",
-      {
-        kind: SpanKind.SERVER,
-        parent: isTracingEnabled()
-          ? extractMcpTraceContext(req.body)
-          : undefined,
-        attributes: {
-          "http.request.method": req.method,
-          "http.route": "/mcp",
-          "mcp.method": method,
-          "mcp.protocol.version": MCP_PROTOCOL_VERSION,
-        },
-      },
-      async (span) => {
-        if (
-          options.authToken &&
-          !matchesBearerToken(req.headers.authorization, options.authToken)
-        ) {
-          span.setAttribute("mcp.authenticated", false);
-          span.setAttribute("http.response.status_code", 401);
-          res.status(401).json({ error: "Unauthorized" });
-          return;
-        }
+    if (
+      options.authToken &&
+      !matchesBearerToken(req.headers.authorization, options.authToken)
+    ) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
 
-        span.setAttribute("mcp.authenticated", Boolean(options.authToken));
-        await handleMcp(req, res, req.body);
-        span.setAttribute("http.response.status_code", res.statusCode);
-      },
-    ).catch(next);
+    void handleMcp(req, res, req.body).catch(next);
   });
 
   app.get("/health", (_req: Request, res: Response) => {

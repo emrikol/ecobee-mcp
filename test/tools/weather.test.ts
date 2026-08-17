@@ -53,10 +53,14 @@ describe("get_weather tool", () => {
       signal,
     );
 
-    const data = parseResult(result) as {
-      station: string;
-      forecasts: Array<{ condition: string; temperature: number }>;
-    };
+    const data = (
+      parseResult(result) as {
+        weather: {
+          station: string;
+          forecasts: Array<{ condition: string; temperature: number }>;
+        };
+      }
+    ).weather;
     expect(data.station).toBe("KORD");
     expect(data.forecasts[0].condition).toBe("Partly Cloudy");
     expect(data.forecasts[0].temperature).toBe(32);

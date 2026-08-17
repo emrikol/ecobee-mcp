@@ -6,7 +6,7 @@ import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 interface TestToolResult {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
-  structuredContent?: Record<string, unknown>;
+  structuredContent?: unknown;
 }
 
 export type ToolRegistry = Record<
@@ -30,10 +30,20 @@ export const signal = {
   mcpReq: { signal: new AbortController().signal },
 } as unknown as ServerContext;
 
-export function parseResult(result: {
-  content: Array<{ type: string; text: string }>;
-}): unknown {
-  return JSON.parse(result.content[0].text);
+export function parseResult(result: { structuredContent?: unknown }): unknown {
+  if (result.structuredContent === undefined) {
+    throw new Error("Expected a structured tool result");
+  }
+  const structured = result.structuredContent;
+  if (
+    typeof structured === "object" &&
+    structured !== null &&
+    !Array.isArray(structured)
+  ) {
+    const values = Object.values(structured);
+    if (values.length === 1) return values[0];
+  }
+  return structured;
 }
 
 export function mockApiBase(): Partial<EcobeeApiClient> {

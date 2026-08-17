@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.1] - 2026-08-17
+
+### Changed
+
+- Removed recursive result redaction; credential data remains isolated from MCP result construction, fixed public errors, health output, and development fixtures by design.
+- Removed production OpenTelemetry instrumentation and dependencies. CPU, allocation, trace-event, event-loop, and flamegraph diagnostics remain development-only and disabled outside explicit benchmark commands.
+- Stopped duplicating structured results into text content; non-string/default text now points clients to the complete validated `structuredContent`.
+- Production builds now clean `dist/` before compilation so removed modules cannot survive as stale deployment artifacts.
+
 ## [2.1.0] - 2026-08-17
 
 ### Added

@@ -11,7 +11,7 @@ const largeOutputSchema = z.object({
 });
 
 describe("structuredResult", () => {
-  it("removes duplicate text when a validated structured result nears the limit", () => {
+  it("uses compact text when a validated structured result nears the limit", () => {
     const result = structuredResult(largeOutputSchema, {
       data: "x".repeat(140 * 1024),
     });
@@ -33,7 +33,7 @@ describe("structuredResult", () => {
     ).toThrow(EcobeeResponseLimitError);
   });
 
-  it("preserves an explicitly supplied compact text representation", () => {
+  it("does not serialize a second non-string representation", () => {
     const result = structuredResult(
       largeOutputSchema,
       { data: "value" },
@@ -42,7 +42,7 @@ describe("structuredResult", () => {
 
     expect(result.content[0]).toEqual({
       type: "text",
-      text: '{"summary":"compact"}',
+      text: "Structured Ecobee result returned; use structuredContent for the complete validated data.",
     });
   });
 });

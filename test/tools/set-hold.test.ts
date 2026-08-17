@@ -27,7 +27,10 @@ describe("set_hold tool", () => {
     const params = setHold.mock.calls[0][1];
     expect(params.holdClimateRef).toBe("away");
     expect(params.holdType).toBe("indefinite");
-    expect(result.content[0].text).toContain("away");
+    expect(
+      (result.structuredContent as { requestedChange: { climateRef: string } })
+        .requestedChange.climateRef,
+    ).toBe("away");
   });
 
   it("should hold by custom temps", async () => {

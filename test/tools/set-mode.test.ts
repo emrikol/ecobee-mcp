@@ -20,6 +20,9 @@ describe("set_hvac_mode tool", () => {
     );
 
     expect(setHvacMode).toHaveBeenCalledWith("123", "heat");
-    expect(result.content[0].text).toContain("heat");
+    expect(
+      (result.structuredContent as { requestedChange: { mode: string } })
+        .requestedChange.mode,
+    ).toBe("heat");
   });
 });

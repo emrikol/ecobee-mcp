@@ -1,6 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { SpanKind } from "@opentelemetry/api";
-import { activeSpan, traceOperation } from "../observability.js";
 import type { EcobeeAuth } from "./auth.js";
 import type {
   EcobeeApiResponse,
@@ -381,39 +379,13 @@ export class EcobeeApiClient {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    return traceOperation(
-      "ecobee.request",
-      {
-        kind: SpanKind.CLIENT,
-        attributes: {
-          "http.request.method": method,
-          "http.route": path.split("?", 1)[0],
-          "server.address": "api.ecobee.com",
-          "ecobee.request.mutation": method === "POST",
-        },
-      },
-      async (span) => {
-        const signal = this.requestContext.getStore()?.signal;
-        const queuedAt = performance.now();
-        await this.acquireSlot(signal);
-        span.setAttribute(
-          "ecobee.queue.duration_ms",
-          performance.now() - queuedAt,
-        );
-        try {
-          return await this.doRequest<T>(
-            method,
-            path,
-            body,
-            false,
-            false,
-            signal,
-          );
-        } finally {
-          this.releaseSlot();
-        }
-      },
-    );
+    const signal = this.requestContext.getStore()?.signal;
+    await this.acquireSlot(signal);
+    try {
+      return await this.doRequest<T>(method, path, body, false, false, signal);
+    } finally {
+      this.releaseSlot();
+    }
   }
 
   private async doRequest<T>(
@@ -457,7 +429,6 @@ export class EcobeeApiClient {
           ...(body && method === "POST" ? { body: JSON.stringify(body) } : {}),
         },
       );
-      activeSpan()?.setAttribute("http.response.status_code", response.status);
       responseText = await readBoundedResponse(
         response,
         boundedPositiveInteger(
@@ -481,7 +452,6 @@ export class EcobeeApiClient {
 
     if (response.status === 401 && !authRetried) {
       // Token may be expired - try to refresh and retry once
-      activeSpan()?.setAttribute("ecobee.auth.retried", true);
       await this.auth.handleUnauthorized();
       return this.doRequest<T>(
         method,
@@ -495,7 +465,6 @@ export class EcobeeApiClient {
 
     if (response.status === 429) {
       if (method === "GET" && !rateLimitRetried) {
-        activeSpan()?.setAttribute("ecobee.rate_limit.retried", true);
         const waitMs = retryAfterMs(response.headers?.get?.("retry-after"));
         await abortableDelay(waitMs, signal);
         return this.doRequest<T>(method, path, body, authRetried, true, signal);
@@ -514,7 +483,6 @@ export class EcobeeApiClient {
         !authRetried &&
         parseEcobeeStatusCode(responseText) === ECOBEE_TOKEN_EXPIRED
       ) {
-        activeSpan()?.setAttribute("ecobee.auth.retried", true);
         await this.auth.handleUnauthorized();
         return this.doRequest<T>(
           method,
@@ -552,7 +520,6 @@ export class EcobeeApiClient {
     if (data?.status?.code !== undefined && data.status.code !== 0) {
       // Same expiry case, but returned alongside a 2xx status.
       if (!authRetried && data.status.code === ECOBEE_TOKEN_EXPIRED) {
-        activeSpan()?.setAttribute("ecobee.auth.retried", true);
         await this.auth.handleUnauthorized();
         return this.doRequest<T>(
           method,

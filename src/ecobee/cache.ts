@@ -3,8 +3,6 @@
  * 60-second TTL per thermostat. Does not cache errors.
  */
 
-import { activeSpan } from "../observability.js";
-
 const DEFAULT_TTL_MS = 60_000;
 
 interface CacheEntry<T> {
@@ -28,18 +26,14 @@ export class EcobeeCache {
     // Check cache first
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) {
-      recordCacheEvent("hit", key);
       return cached.data as T;
     }
 
     // Check if there's already an in-flight request
     const existing = this.inflight.get(key);
     if (existing) {
-      recordCacheEvent("deduplicated", key);
       return existing as Promise<T>;
     }
-
-    recordCacheEvent("miss", key);
 
     // Start new fetch with dedup
     const promise = fetcher()
@@ -75,16 +69,4 @@ export class EcobeeCache {
   clear(): void {
     this.cache.clear();
   }
-}
-
-function recordCacheEvent(
-  outcome: "hit" | "miss" | "deduplicated",
-  key: string,
-): void {
-  const span = activeSpan();
-  if (!span?.isRecording()) return;
-  span.addEvent("ecobee.cache", {
-    "ecobee.cache.outcome": outcome,
-    "ecobee.cache.operation": key.slice(key.lastIndexOf(":") + 1).slice(0, 32),
-  });
 }

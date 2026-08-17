@@ -13,6 +13,24 @@ interface TestToolResult {
   structuredContent?: Record<string, unknown>;
 }
 
+interface StructuredVacationResult {
+  requestedChange: {
+    dryRun: boolean;
+    vacations: Array<{
+      name: string;
+      heatTemp: number;
+      coolTemp: number;
+      startTime: string;
+      endTime: string;
+    }>;
+  };
+}
+
+function vacationChange(result: TestToolResult) {
+  return (result.structuredContent as unknown as StructuredVacationResult)
+    .requestedChange;
+}
+
 type ToolRegistry = Record<
   string,
   { handler: (...args: unknown[]) => Promise<TestToolResult> }
@@ -89,9 +107,7 @@ describe("set_vacation tool", () => {
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = vacationChange(result);
     expect(data.dryRun).toBe(true);
     expect(data.vacations[0].name).toBe("Mar01-Mar08");
   });
@@ -116,9 +132,7 @@ describe("set_vacation tool", () => {
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = vacationChange(result);
     expect(data.vacations[0].name).toBe("Mar01-Mar082");
   });
 
@@ -244,10 +258,7 @@ describe("set_vacation tool", () => {
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
-    expect(data.defaults).toEqual({ heatTemp: 62, coolTemp: 76 });
+    const data = vacationChange(result);
     expect(data.vacations[0].heatTemp).toBe(62);
     expect(data.vacations[0].coolTemp).toBe(76);
   });
@@ -270,10 +281,7 @@ describe("set_vacation tool", () => {
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
-    expect(data.defaults).toEqual({ heatTemp: 65, coolTemp: 78 });
+    const data = vacationChange(result);
     expect(data.vacations[0].heatTemp).toBe(65);
     expect(data.vacations[0].coolTemp).toBe(78);
   });
@@ -298,9 +306,7 @@ describe("set_vacation tool", () => {
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = vacationChange(result);
     expect(data.vacations[0].startTime).toBe("08:30:00");
     expect(data.vacations[0].endTime).toBe("17:00:00");
   });
@@ -404,7 +410,7 @@ describe("set_vacation tool", () => {
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    const data = JSON.parse(result.content[0].text);
+    const data = vacationChange(result);
     expect(data.vacations[0].name).toBe("Mar01-Mar083");
   });
 });

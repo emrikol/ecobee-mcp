@@ -2,9 +2,9 @@
 
 The performance harness exercises the production HTTP adapter, modern MCP
 negotiation metadata, official SDK v2 client, tool schemas, validation,
-redaction, serialization, compression, cache, and bounded Ecobee response
-reader. It uses deterministic in-memory Ecobee fixtures and an injected fetch
-transport. It never contacts the live Ecobee API and never invokes a mutation.
+serialization, compression, cache, and bounded Ecobee response reader. It uses
+deterministic in-memory Ecobee fixtures and an injected fetch transport. It
+never contacts the live Ecobee API and never invokes a mutation.
 
 ## Release results
 
@@ -30,6 +30,20 @@ The chunked Ecobee transport probe remained about 1 ms per 512 KiB response.
 Changing its string accumulator to an array and final join did not improve the
 measurement, so that speculative change was not retained.
 
+### 2.1.1 production-path cleanup
+
+Removing recursive result sanitization and all production telemetry wrappers
+reduced the same sampled workload from 3.663 to 3.287 CPU seconds, a further
+10.3%. The unprofiled full-day runtime scenario improved from 145.9 to 171.6
+requests per second, with median latency falling from 6.89 to 5.79 ms. The
+development profiler and trace-event commands remain available but no
+diagnostic hook executes in production.
+
+Structured-result self CPU then fell from 76.6 to 56.3 sampled milliseconds,
+and its sampled allocation fell from 63.2 to 33.3 MiB, after eliminating the
+discarded duplicate text serialization. Total-profile timing for that run was
+not used because concurrent system load and garbage collection made it noisy.
+
 ## Wire size
 
 Large JSON responses use normal HTTP content negotiation for Brotli, gzip, or
@@ -39,14 +53,14 @@ records the harness's gzip path.
 | Response                   | Decoded bytes | Wire bytes | Reduction | Encoding |
 | -------------------------- | ------------: | ---------: | --------: | -------- |
 | `tools/list`               |        47,866 |      5,358 |     88.8% | gzip     |
-| Cached thermostat status   |           753 |        753 |         0 | identity |
+| Cached thermostat status   |           560 |        560 |         0 | identity |
 | Full-day runtime intervals |       119,915 |     11,617 |     90.3% | gzip     |
 
 The runtime result previously serialized the same large object into both text
 and `structuredContent`, producing about 325 KiB before the outer response-size
-check. Large results now retain the validated `structuredContent` and use a
-short text pointer. The complete serialized tool result remains bounded to 256
-KiB.
+check. Structured results now retain the validated `structuredContent` and use
+a short text pointer. This also reduced the representative status response by
+25.6%. The complete serialized tool result remains bounded to 256 KiB.
 
 ## Profile findings and fixes
 
@@ -64,12 +78,9 @@ External or replacement results still take the SDK validation path. Discovery
 schemas and their digest are unchanged.
 
 The remaining top application costs are structured-result validation,
-serialization, redaction, and the large runtime fixture. These checks enforce
-the protocol contracts and security boundary, so they were streamlined rather
-than removed. Secret redaction now uses a fast text precheck and copy-on-write
-structured traversal. Resources use compact JSON. Large likely responses use a
-balanced compression level; small, latency-sensitive reads avoid compression
-setup.
+serialization, and the large runtime fixture. Resources use compact JSON.
+Large likely responses use a balanced compression level; small,
+latency-sensitive reads avoid compression setup.
 
 ## Reproduce
 

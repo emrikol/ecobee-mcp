@@ -65,10 +65,18 @@ describe("get_schedule tool", () => {
       signal,
     );
 
-    const data = parseResult(result) as {
-      currentClimate: string;
-      climates: Array<{ name: string; heatTemp: number; coolTemp: number }>;
-    };
+    const data = (
+      parseResult(result) as {
+        program: {
+          currentClimate: string;
+          climates: Array<{
+            name: string;
+            heatTemp: number;
+            coolTemp: number;
+          }>;
+        };
+      }
+    ).program;
     expect(data.currentClimate).toBe("home");
     expect(data.climates).toHaveLength(2);
     expect(data.climates[0].heatTemp).toBe(70);

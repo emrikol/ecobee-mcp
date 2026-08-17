@@ -33,7 +33,10 @@ describe("set_temperature tool", () => {
     expect(params.heatHoldTemp).toBe(700);
     expect(params.coolHoldTemp).toBe(760);
     expect(params.holdType).toBe("nextTransition");
-    expect(result.content[0].text).toContain("70");
+    expect(
+      (result.structuredContent as { requestedChange: { heatTemp: number } })
+        .requestedChange.heatTemp,
+    ).toBe(70);
   });
 
   it("should set only heat temp", async () => {
@@ -58,8 +61,13 @@ describe("set_temperature tool", () => {
     const params = setHold.mock.calls[0][1];
     expect(params.heatHoldTemp).toBe(680);
     expect(params.coolHoldTemp).toBeUndefined();
-    expect(result.content[0].text).toContain("68");
-    expect(result.content[0].text).toContain("indefinite");
+    expect(
+      result.structuredContent as {
+        requestedChange: { heatTemp: number; holdType: string };
+      },
+    ).toMatchObject({
+      requestedChange: { heatTemp: 68, holdType: "indefinite" },
+    });
   });
 
   it("should error without any temp", async () => {

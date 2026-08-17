@@ -8,6 +8,23 @@ import type { Thermostat } from "../../src/ecobee/types.js";
 interface TestToolResult {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
+  structuredContent?: { thermostat: StatusPayload };
+}
+
+interface StatusPayload {
+  connected: boolean;
+  temperature: number | null;
+  humidity: number | null;
+  hvacMode: string;
+  desiredHeat: number | null;
+  desiredCool: number | null;
+  equipmentStatus: string;
+  activeHold: { type: string; heatTemp: number } | null;
+  activeVacation: {
+    name: string;
+    heatTemp: number;
+    coolTemp: number;
+  } | null;
 }
 
 type ToolRegistry = Record<
@@ -89,9 +106,7 @@ describe("get_thermostat_status tool", () => {
     const result = await statusTool.handler({ thermostatId: undefined }, {
       mcpReq: { signal: new AbortController().signal },
     } as never);
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = result.structuredContent!.thermostat;
 
     expect(data.temperature).toBe(72);
     expect(data.humidity).toBe(45);
@@ -142,9 +157,7 @@ describe("get_thermostat_status tool", () => {
       { thermostatId: undefined },
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = result.structuredContent!.thermostat;
 
     expect(data.activeHold).toBeTruthy();
     expect(data.activeHold.type).toBe("away");
@@ -180,9 +193,7 @@ describe("get_thermostat_status tool", () => {
       { thermostatId: "123456" },
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = result.structuredContent!.thermostat;
 
     expect(data.connected).toBe(false);
     expect(data.temperature).toBeNull();
@@ -237,9 +248,7 @@ describe("get_thermostat_status tool", () => {
       { thermostatId: undefined },
       { mcpReq: { signal: new AbortController().signal } } as never,
     );
-    const data = JSON.parse(
-      (result.content as Array<{ type: string; text: string }>)[0].text,
-    );
+    const data = result.structuredContent!.thermostat;
 
     expect(data.activeVacation).toBeTruthy();
     expect(data.activeVacation.name).toBe("Feb07-Feb09");

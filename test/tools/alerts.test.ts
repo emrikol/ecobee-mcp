@@ -46,10 +46,11 @@ describe("alert tools", () => {
       signal,
     );
 
-    const data = JSON.parse(result.content[0].text) as Array<{
-      text: string;
-      severity: string;
-    }>;
+    const data = (
+      result.structuredContent as {
+        alerts: Array<{ text: string; severity: string }>;
+      }
+    ).alerts;
     expect(data).toHaveLength(1);
     expect(data[0].text).toContain("Filter");
     expect(data[0].severity).toBe("high");

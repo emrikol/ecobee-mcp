@@ -4,7 +4,6 @@ import type {
 } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import { MAX_TOOL_RESULT_BYTES } from "../tools/contracts.js";
-import { redactSecrets } from "../security/redaction.js";
 
 export function registerEcobeeResource(
   server: McpServer,
@@ -25,14 +24,7 @@ export function registerEcobeeResource(
       if (bytes > MAX_TOOL_RESULT_BYTES) {
         throw new Error("Resource response is too large.");
       }
-      return {
-        ...result,
-        contents: result.contents.map((content) =>
-          "text" in content
-            ? { ...content, text: redactSecrets(content.text) }
-            : content,
-        ),
-      };
+      return result;
     } catch {
       throw new Error("Ecobee resource read failed.");
     }

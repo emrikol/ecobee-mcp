@@ -64,11 +64,15 @@ describe("list_vacations tool", () => {
       signal,
     );
 
-    const data = parseResult(result) as Array<{
-      name: string;
-      heatTemp: number;
-      coolTemp: number;
-    }>;
+    const data = (
+      parseResult(result) as {
+        vacations: Array<{
+          name: string;
+          heatTemp: number;
+          coolTemp: number;
+        }>;
+      }
+    ).vacations;
     expect(data).toHaveLength(1);
     expect(data[0].name).toBe("Feb07-Feb09");
     expect(data[0].heatTemp).toBe(65);
