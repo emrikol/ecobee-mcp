@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerListThermostats } from "../../src/tools/list-thermostats.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("list_thermostats tool", () => {
   it("should list thermostats with status", async () => {

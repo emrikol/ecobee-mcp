@@ -1,28 +1,55 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { fromEcobeeTemp } from "../ecobee/types.js";
 import { resolveId } from "./set-temperature.js";
+import {
+  boundedString,
+  finiteNumber,
+  MAX_EVENTS,
+  optionalThermostatIdSchema,
+  readOnlyAnnotations,
+  registerEcobeeTool,
+  structuredResult,
+  toolError,
+} from "./contracts.js";
+
+const eventSchema = z.object({
+  name: boundedString(128),
+  running: z.boolean(),
+  start: boundedString(32),
+  end: boundedString(32),
+  isOptional: z.boolean(),
+  dutyCyclePercentage: finiteNumber,
+  coolHoldTemp: finiteNumber,
+  heatHoldTemp: finiteNumber,
+  isTemperatureAbsolute: z.boolean(),
+  isTemperatureRelative: z.boolean(),
+});
+
+const outputSchema = z.object({
+  thermostatId: boundedString(64),
+  thermostatName: boundedString(128),
+  drAcceptSetting: boundedString(64),
+  events: z.array(eventSchema).max(MAX_EVENTS),
+});
 
 export function registerGetDemandResponse(
   server: McpServer,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ): void {
-  server.registerTool(
+  registerEcobeeTool(
+    server,
+    api,
     "get_demand_response",
     {
       description:
         "List demand response (DR) events from your utility's eco+ program. Shows active and upcoming DR events with their temperature adjustments and duty cycle settings.",
-      inputSchema: {
-        thermostatId: z
-          .string()
-          .optional()
-          .describe(
-            "Thermostat ID. Omit to use the first registered thermostat.",
-          ),
-      },
+      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      outputSchema,
+      annotations: readOnlyAnnotations,
     },
     async (args) => {
       const id = await resolveId(args.thermostatId, api, cache);
@@ -35,12 +62,7 @@ export function registerGetDemandResponse(
       });
 
       if (thermostats.length === 0) {
-        return {
-          content: [
-            { type: "text" as const, text: "No thermostat found." },
-          ],
-          isError: true,
-        };
+        return toolError("No thermostat found.");
       }
 
       const t = thermostats[0];
@@ -51,14 +73,16 @@ export function registerGetDemandResponse(
       const drAccept = t.settings?.drAccept ?? "unknown";
 
       if (drEvents.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No demand response events. DR acceptance setting: ${drAccept}`,
-            },
-          ],
-        };
+        return structuredResult(
+          outputSchema,
+          {
+            thermostatId: t.identifier,
+            thermostatName: t.name,
+            drAcceptSetting: drAccept,
+            events: [],
+          },
+          `No demand response events. DR acceptance setting: ${drAccept}`,
+        );
       }
 
       const events = drEvents.map((e) => ({
@@ -74,20 +98,20 @@ export function registerGetDemandResponse(
         isTemperatureRelative: e.isTemperatureRelative,
       }));
 
-      const result = {
-        thermostat: t.name,
-        drAcceptSetting: drAccept,
-        events,
-      };
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
+      return structuredResult(
+        outputSchema,
+        {
+          thermostatId: t.identifier,
+          thermostatName: t.name,
+          drAcceptSetting: drAccept,
+          events,
+        },
+        {
+          thermostat: t.name,
+          drAcceptSetting: drAccept,
+          events,
+        },
+      );
     },
   );
 }

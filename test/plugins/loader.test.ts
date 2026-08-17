@@ -115,10 +115,7 @@ describe("loadPlugins", () => {
     process.env.ENABLE_PLUGINS = "1";
 
     const outsideFile = join(tmpDir, "outside.js");
-    await writeFile(
-      outsideFile,
-      'export default { name: "escape-attempt" };',
-    );
+    await writeFile(outsideFile, 'export default { name: "escape-attempt" };');
     await symlink(outsideFile, join(tmpDir, "plugins", "escape.js"));
 
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

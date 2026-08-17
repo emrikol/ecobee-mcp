@@ -4,7 +4,13 @@ import {
   registerGetHouseDetails,
   registerUpdateHouseDetails,
 } from "../../src/tools/house-details.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("house details tools", () => {
   it("get_house_details should return house info", async () => {
@@ -46,9 +52,7 @@ describe("house details tools", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: async () => [
-        { identifier: "123", name: "Main" },
-      ],
+      getThermostats: async () => [{ identifier: "123", name: "Main" }],
     } as unknown as EcobeeApiClient;
 
     registerGetHouseDetails(server, api, cache);

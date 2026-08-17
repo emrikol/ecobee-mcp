@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetExtendedRuntime } from "../../src/tools/extended-runtime.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_extended_runtime tool", () => {
   it("should format 5-minute interval data", async () => {
@@ -67,9 +73,7 @@ describe("get_extended_runtime tool", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: async () => [
-        { identifier: "123", name: "Main" },
-      ],
+      getThermostats: async () => [{ identifier: "123", name: "Main" }],
     } as unknown as EcobeeApiClient;
 
     registerGetExtendedRuntime(server, api, cache);
@@ -79,7 +83,10 @@ describe("get_extended_runtime tool", () => {
       signal,
     );
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).not.toBe(true);
+    expect(
+      (result.structuredContent as { readings: unknown[] }).readings,
+    ).toEqual([]);
   });
 
   it("should handle no thermostat found", async () => {

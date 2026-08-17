@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerListVacations } from "../../src/tools/list-vacations.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("list_vacations tool", () => {
   it("should list vacation events with converted temps", async () => {
@@ -87,9 +93,9 @@ describe("list_vacations tool", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: vi.fn().mockResolvedValue([
-        { identifier: "123", name: "Main", events: [] },
-      ]),
+      getThermostats: vi
+        .fn()
+        .mockResolvedValue([{ identifier: "123", name: "Main", events: [] }]),
     } as unknown as EcobeeApiClient;
 
     registerListVacations(server, api, cache);

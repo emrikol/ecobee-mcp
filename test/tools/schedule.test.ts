@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetSchedule } from "../../src/tools/schedule.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_schedule tool", () => {
   it("should return schedule with climates", async () => {
@@ -46,9 +52,7 @@ describe("get_schedule tool", () => {
                 heatTemp: 600,
               },
             ],
-            schedule: [
-              ["home", "home", "away", "away", "home", "home"],
-            ],
+            schedule: [["home", "home", "away", "away", "home", "home"]],
           },
         },
       ]),
@@ -89,9 +93,9 @@ describe("get_schedule tool", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: vi.fn().mockResolvedValue([
-        { identifier: "123", name: "Main" },
-      ]),
+      getThermostats: vi
+        .fn()
+        .mockResolvedValue([{ identifier: "123", name: "Main" }]),
     } as unknown as EcobeeApiClient;
 
     registerGetSchedule(server, api, cache);

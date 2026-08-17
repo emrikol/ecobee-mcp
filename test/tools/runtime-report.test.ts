@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetRuntimeReport } from "../../src/tools/runtime-report.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_runtime_report tool", () => {
   it("should return summarized report", async () => {
@@ -65,10 +71,7 @@ describe("get_runtime_report tool", () => {
         {
           thermostatIdentifier: "123",
           rowCount: 2,
-          rowList: [
-            "2026-02-01,00:00:00,120,300",
-            "2026-02-01,00:05:00,0,0",
-          ],
+          rowList: ["2026-02-01,00:00:00,120,300", "2026-02-01,00:05:00,0,0"],
         },
       ],
       sensorList: [],

@@ -1,7 +1,8 @@
+import type { McpServer } from "@modelcontextprotocol/server";
+
 /* v8 ignore start -- Integration test: tool registration barrel.
    Test that registerAllTools registers all 24 tools on the MCP server.
    Verify via MCP client session tools/list that every tool is discoverable. */
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { registerListThermostats } from "./list-thermostats.js";

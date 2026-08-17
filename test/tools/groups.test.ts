@@ -4,7 +4,13 @@ import {
   registerListGroups,
   registerManageGroup,
 } from "../../src/tools/groups.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("group tools", () => {
   it("list_groups should show groups with sync flags", async () => {
@@ -62,9 +68,11 @@ describe("group tools", () => {
 
   it("manage_group should create a group", async () => {
     const { server, cache } = createServer();
-    const updateGroups = vi.fn().mockResolvedValue([
-      { groupRef: "new123", groupName: "upstairs", thermostats: ["111"] },
-    ]);
+    const updateGroups = vi
+      .fn()
+      .mockResolvedValue([
+        { groupRef: "new123", groupName: "upstairs", thermostats: ["111"] },
+      ]);
     const api = {
       ...mockApiBase(),
       updateGroups,
@@ -109,7 +117,11 @@ describe("group tools", () => {
   it("manage_group should update existing group", async () => {
     const { server, cache } = createServer();
     const updateGroups = vi.fn().mockResolvedValue([
-      { groupRef: "abc123", groupName: "ground_floor", thermostats: ["111", "222", "333"] },
+      {
+        groupRef: "abc123",
+        groupName: "ground_floor",
+        thermostats: ["111", "222", "333"],
+      },
     ]);
     const api = {
       ...mockApiBase(),

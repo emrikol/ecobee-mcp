@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetSensors } from "../../src/tools/sensors.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_sensors tool", () => {
   it("should return sensor data with converted temps", async () => {

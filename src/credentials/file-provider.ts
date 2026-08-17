@@ -11,7 +11,8 @@ export class FileCredentialProvider implements CredentialProvider {
   private readonly filePath: string;
 
   constructor(filePath?: string) {
-    this.filePath = /* v8 ignore next */
+    this.filePath =
+      /* v8 ignore next */
       filePath ?? join(process.cwd(), "credentials.json");
   }
 
@@ -19,11 +20,7 @@ export class FileCredentialProvider implements CredentialProvider {
     const data = await readFile(this.filePath, "utf-8");
     const parsed = JSON.parse(data);
 
-    if (
-      !parsed.accessToken ||
-      !parsed.refreshToken ||
-      !parsed.apiKey
-    ) {
+    if (!parsed.accessToken || !parsed.refreshToken || !parsed.apiKey) {
       throw new Error(
         `Invalid credentials file: missing required fields in ${this.filePath}`,
       );
@@ -32,7 +29,7 @@ export class FileCredentialProvider implements CredentialProvider {
     return {
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
-      expiresAt: parsed.expiresAt ?? 0, /* v8 ignore next */
+      expiresAt: parsed.expiresAt ?? 0 /* v8 ignore next */,
       apiKey: parsed.apiKey,
     };
   }

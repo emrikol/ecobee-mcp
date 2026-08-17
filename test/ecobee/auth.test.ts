@@ -143,5 +143,60 @@ describe("EcobeeAuth", () => {
         }),
       );
     });
+
+    it("does not expose secrets from a failed token refresh", async () => {
+      const almostExpired = {
+        ...validCreds,
+        refreshToken: "refresh-token-never-expose",
+        apiKey: "client-key-never-expose",
+        expiresAt: Date.now() + 60_000,
+      };
+      provider.getCredentials = vi.fn().mockResolvedValue(almostExpired);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 400,
+          text: () =>
+            Promise.resolve(
+              "refresh_token=refresh-token-never-expose&client_id=client-key-never-expose",
+            ),
+        }),
+      );
+      const auth = new EcobeeAuth(provider, "full");
+
+      let caught: unknown;
+      try {
+        await auth.getAccessToken();
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(String(caught)).toContain("HTTP 400");
+      expect(String(caught)).not.toContain("refresh-token-never-expose");
+      expect(String(caught)).not.toContain("client-key-never-expose");
+      expect(provider.saveCredentials).not.toHaveBeenCalled();
+    });
+
+    it("isolates token refresh hook failures without logging credentials", async () => {
+      const almostExpired = {
+        ...validCreds,
+        expiresAt: Date.now() + 60_000,
+      };
+      provider.getCredentials = vi.fn().mockResolvedValue(almostExpired);
+      const auth = new EcobeeAuth(provider, "full");
+      auth.addTokenRefreshHook(async (credentials) => {
+        throw new Error(`access_token=${credentials.accessToken}`);
+      });
+      const errorLog = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      await expect(auth.getAccessToken()).resolves.toBe("refreshed-token");
+      expect(errorLog).toHaveBeenCalledWith("[auth] Token refresh hook failed");
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain(
+        "refreshed-token",
+      );
+    });
   });
 });

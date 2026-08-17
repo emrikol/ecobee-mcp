@@ -1,36 +1,52 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
+import {
+  boundedString,
+  MAX_THERMOSTATS,
+  readOnlyAnnotations,
+  registerEcobeeTool,
+  structuredResult,
+} from "./contracts.js";
+
+const outputSchema = z.object({
+  thermostats: z
+    .array(
+      z.object({
+        id: boundedString(64),
+        name: boundedString(128),
+        connected: z.boolean(),
+        model: boundedString(128),
+      }),
+    )
+    .max(MAX_THERMOSTATS),
+});
 
 export function registerListThermostats(
   server: McpServer,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ): void {
-  server.registerTool(
+  registerEcobeeTool(
+    server,
+    api,
     "list_thermostats",
     {
       description:
         "List all registered Ecobee thermostats with their ID, name, and connection status.",
-      inputSchema: {
-        random_string: z
-          .string()
-          .optional()
-          .describe("Unused parameter, pass any value"),
-      },
+      inputSchema: z.object({}),
+      outputSchema,
+      annotations: readOnlyAnnotations,
     },
     async () => {
-      const thermostats = await cache.getOrFetch(
-        "all:list",
-        async () => {
-          return api.getThermostats({
-            selectionType: "registered",
-            selectionMatch: "",
-            includeRuntime: true,
-          });
-        },
-      );
+      const thermostats = await cache.getOrFetch("all:list", async () => {
+        return api.getThermostats({
+          selectionType: "registered",
+          selectionMatch: "",
+          includeRuntime: true,
+        });
+      });
 
       const result = thermostats.map((t) => ({
         id: t.identifier,
@@ -39,14 +55,7 @@ export function registerListThermostats(
         model: t.modelNumber,
       }));
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
+      return structuredResult(outputSchema, { thermostats: result }, result);
     },
   );
 }

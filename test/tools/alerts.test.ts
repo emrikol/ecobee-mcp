@@ -59,9 +59,9 @@ describe("alert tools", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: vi.fn().mockResolvedValue([
-        { identifier: "123", name: "Main", alerts: [] },
-      ]),
+      getThermostats: vi
+        .fn()
+        .mockResolvedValue([{ identifier: "123", name: "Main", alerts: [] }]),
     } as unknown as EcobeeApiClient;
 
     registerGetAlerts(server, api, cache);

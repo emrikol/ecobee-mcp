@@ -1,15 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { EcobeeCache } from "../../src/ecobee/cache.js";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetThermostatStatus } from "../../src/tools/status.js";
 import type { Thermostat } from "../../src/ecobee/types.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolRegistry = Record<string, { handler: (...args: any[]) => Promise<any> }>;
+interface TestToolResult {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+}
+
+type ToolRegistry = Record<
+  string,
+  { handler: (...args: unknown[]) => Promise<TestToolResult> }
+>;
 
 function getTools(server: McpServer): ToolRegistry {
-  return (server as unknown as { _registeredTools: ToolRegistry })._registeredTools;
+  return (server as unknown as { _registeredTools: ToolRegistry })
+    ._registeredTools;
 }
 
 function mockApi(thermostats: Thermostat[]): EcobeeApiClient {
@@ -78,10 +86,9 @@ describe("get_thermostat_status tool", () => {
     const statusTool = tools["get_thermostat_status"];
     expect(statusTool).toBeDefined();
 
-    const result = await statusTool.handler(
-      { thermostatId: undefined },
-      { signal: new AbortController().signal } as never,
-    );
+    const result = await statusTool.handler({ thermostatId: undefined }, {
+      mcpReq: { signal: new AbortController().signal },
+    } as never);
     const data = JSON.parse(
       (result.content as Array<{ type: string; text: string }>)[0].text,
     );
@@ -133,7 +140,7 @@ describe("get_thermostat_status tool", () => {
     const tools = getTools(server);
     const result = await tools["get_thermostat_status"].handler(
       { thermostatId: undefined },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
     const data = JSON.parse(
       (result.content as Array<{ type: string; text: string }>)[0].text,
@@ -151,7 +158,7 @@ describe("get_thermostat_status tool", () => {
     const tools = getTools(server);
     const result = await tools["get_thermostat_status"].handler(
       { thermostatId: "999" },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     expect(result.content[0].text).toContain("No thermostats found");
@@ -171,7 +178,7 @@ describe("get_thermostat_status tool", () => {
     const tools = getTools(server);
     const result = await tools["get_thermostat_status"].handler(
       { thermostatId: "123456" },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
     const data = JSON.parse(
       (result.content as Array<{ type: string; text: string }>)[0].text,
@@ -228,7 +235,7 @@ describe("get_thermostat_status tool", () => {
     const tools = getTools(server);
     const result = await tools["get_thermostat_status"].handler(
       { thermostatId: undefined },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
     const data = JSON.parse(
       (result.content as Array<{ type: string; text: string }>)[0].text,

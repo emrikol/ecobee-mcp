@@ -15,11 +15,19 @@ describe("send_message tool", () => {
     registerSendMessage(server, api, cache);
     const tools = getTools(server);
     const result = await tools["send_message"].handler(
-      { thermostatId: "123", text: "Hello from Claude!" },
+      { thermostatId: "123", text: "Hello from an MCP client!" },
       signal,
     );
 
-    expect(sendMessage).toHaveBeenCalledWith("123", "Hello from Claude!");
+    expect(sendMessage).toHaveBeenCalledWith(
+      "123",
+      "Hello from an MCP client!",
+    );
     expect(result.content[0].text).toContain("sent");
+    expect(JSON.stringify(result)).not.toContain("Hello from an MCP client!");
+    const structured = result.structuredContent as {
+      requestedChange: { messageSha256: string };
+    };
+    expect(structured.requestedChange.messageSha256).toMatch(/^[a-f0-9]{64}$/);
   });
 });

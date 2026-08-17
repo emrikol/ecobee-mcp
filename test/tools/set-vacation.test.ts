@@ -1,14 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { EcobeeCache } from "../../src/ecobee/cache.js";
-import type { EcobeeApiClient } from "../../src/ecobee/api.js";
+import {
+  AmbiguousMutationDeliveryError,
+  type EcobeeApiClient,
+} from "../../src/ecobee/api.js";
 import { registerSetVacation } from "../../src/tools/set-vacation.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolRegistry = Record<string, { handler: (...args: any[]) => Promise<any> }>;
+interface TestToolResult {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: Record<string, unknown>;
+}
+
+type ToolRegistry = Record<
+  string,
+  { handler: (...args: unknown[]) => Promise<TestToolResult> }
+>;
 
 function getTools(server: McpServer): ToolRegistry {
-  return (server as unknown as { _registeredTools: ToolRegistry })._registeredTools;
+  return (server as unknown as { _registeredTools: ToolRegistry })
+    ._registeredTools;
 }
 
 interface MockVacation {
@@ -17,7 +29,9 @@ interface MockVacation {
   coolHoldTemp?: number;
 }
 
-function mockApi(existingVacations: (string | MockVacation)[] = []): EcobeeApiClient {
+function mockApi(
+  existingVacations: (string | MockVacation)[] = [],
+): EcobeeApiClient {
   return {
     getThermostats: vi.fn().mockResolvedValue([
       {
@@ -30,6 +44,10 @@ function mockApi(existingVacations: (string | MockVacation)[] = []): EcobeeApiCl
             name: obj.name,
             heatHoldTemp: obj.heatHoldTemp ?? 650,
             coolHoldTemp: obj.coolHoldTemp ?? 780,
+            startDate: "2026-03-01",
+            startTime: "00:00:00",
+            endDate: "2026-03-08",
+            endTime: "00:00:00",
             running: false,
           };
         }),
@@ -68,7 +86,7 @@ describe("set_vacation tool", () => {
         endTime: "00:00:00",
         dryRun: true,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     const data = JSON.parse(
@@ -95,7 +113,7 @@ describe("set_vacation tool", () => {
         endTime: "00:00:00",
         dryRun: true,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     const data = JSON.parse(
@@ -133,13 +151,13 @@ describe("set_vacation tool", () => {
         ],
         dryRun: false,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     expect(api.createVacationsBulk).toHaveBeenCalledTimes(1);
   });
 
-  it("should fall back to individual creates when bulk fails", async () => {
+  it("should not retry individually when bulk delivery fails", async () => {
     const api = mockApi();
     (api.createVacationsBulk as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("bulk failed"),
@@ -171,18 +189,22 @@ describe("set_vacation tool", () => {
         ],
         dryRun: false,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
-    expect(api.createVacation).toHaveBeenCalledTimes(2);
-    const text = (
-      result.content as Array<{ type: string; text: string }>
-    )[0].text;
-    expect(text).toContain("Created 2/2");
+    expect(api.createVacationsBulk).toHaveBeenCalledTimes(1);
+    expect(api.createVacation).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ type: string; text: string }>)[0]
+      .text;
+    expect(text).toBe("Ecobee operation failed.");
   });
 
   it("should delete vacation by name", async () => {
     const api = mockApi(["My Vacation"]);
+    (api.getThermostats as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { identifier: "123", name: "Main", events: [] },
+    ]);
     registerSetVacation(server, api, cache);
 
     const tools = getTools(server);
@@ -193,18 +215,19 @@ describe("set_vacation tool", () => {
         vacationName: "My Vacation",
         dryRun: false,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     expect(api.deleteVacation).toHaveBeenCalledWith("123", "My Vacation");
-    const text = (
-      result.content as Array<{ type: string; text: string }>
-    )[0].text;
+    const text = (result.content as Array<{ type: string; text: string }>)[0]
+      .text;
     expect(text).toContain("deleted");
   });
 
   it("should default temps from existing vacations when omitted", async () => {
-    const api = mockApi([{ name: "Old", heatHoldTemp: 620, coolHoldTemp: 760 }]);
+    const api = mockApi([
+      { name: "Old", heatHoldTemp: 620, coolHoldTemp: 760 },
+    ]);
     registerSetVacation(server, api, cache);
 
     const tools = getTools(server);
@@ -218,7 +241,7 @@ describe("set_vacation tool", () => {
         endTime: "00:00:00",
         dryRun: true,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     const data = JSON.parse(
@@ -244,7 +267,7 @@ describe("set_vacation tool", () => {
         endTime: "00:00:00",
         dryRun: true,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     const data = JSON.parse(
@@ -272,7 +295,7 @@ describe("set_vacation tool", () => {
         endTime: "17:00",
         dryRun: true,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     const data = JSON.parse(
@@ -293,11 +316,11 @@ describe("set_vacation tool", () => {
         thermostatId: "123",
         dryRun: false,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("vacationName is required");
+    expect(result.content[0].text).toBe("Ecobee operation failed.");
   });
 
   it("should error without dates or vacations array", async () => {
@@ -311,21 +334,18 @@ describe("set_vacation tool", () => {
         thermostatId: "123",
         dryRun: false,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("Provide startDate/endDate");
+    expect(result.content[0].text).toBe("Ecobee operation failed.");
   });
 
-  it("should report individual failures", async () => {
+  it("should surface ambiguous bulk delivery without retrying", async () => {
     const api = mockApi();
     (api.createVacationsBulk as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("bulk failed"),
+      new AmbiguousMutationDeliveryError(),
     );
-    (api.createVacation as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("conflict"));
     registerSetVacation(server, api, cache);
 
     const tools = getTools(server);
@@ -353,14 +373,15 @@ describe("set_vacation tool", () => {
         ],
         dryRun: false,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     expect(result.isError).toBe(true);
+    expect(api.createVacationsBulk).toHaveBeenCalledTimes(1);
+    expect(api.createVacation).not.toHaveBeenCalled();
     const text = result.content[0].text;
-    expect(text).toContain("Created 1/2");
-    expect(text).toContain("Failed");
-    expect(text).toContain("conflict");
+    expect(text).toContain("ambiguous");
+    expect(text).toContain("not retried");
   });
 
   it("should handle unique name collision with counter", async () => {
@@ -380,7 +401,7 @@ describe("set_vacation tool", () => {
         endTime: "00:00:00",
         dryRun: true,
       },
-      { signal: new AbortController().signal } as never,
+      { mcpReq: { signal: new AbortController().signal } } as never,
     );
 
     const data = JSON.parse(result.content[0].text);

@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetWeather } from "../../src/tools/weather.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_weather tool", () => {
   it("should return weather with converted temps", async () => {
@@ -74,9 +80,9 @@ describe("get_weather tool", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: vi.fn().mockResolvedValue([
-        { identifier: "123", name: "Main" },
-      ]),
+      getThermostats: vi
+        .fn()
+        .mockResolvedValue([{ identifier: "123", name: "Main" }]),
     } as unknown as EcobeeApiClient;
 
     registerGetWeather(server, api, cache);

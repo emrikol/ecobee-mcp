@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetUtilityInfo } from "../../src/tools/utility-info.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_utility_info tool", () => {
   it("should return utility info", async () => {
@@ -55,9 +61,7 @@ describe("get_utility_info tool", () => {
     const { server, cache } = createServer();
     const api = {
       ...mockApiBase(),
-      getThermostats: async () => [
-        { identifier: "123", name: "Main" },
-      ],
+      getThermostats: async () => [{ identifier: "123", name: "Main" }],
     } as unknown as EcobeeApiClient;
 
     registerGetUtilityInfo(server, api, cache);

@@ -1,28 +1,65 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { fromEcobeeTemp } from "../ecobee/types.js";
 import { resolveId } from "./set-temperature.js";
+import {
+  boundedString,
+  finiteNumber,
+  optionalThermostatIdSchema,
+  readOnlyAnnotations,
+  registerEcobeeTool,
+  structuredResult,
+  toolError,
+} from "./contracts.js";
+
+const equipmentSchema = z.object({
+  heatPump1: finiteNumber,
+  heatPump2: finiteNumber,
+  auxHeat1: finiteNumber,
+  auxHeat2: finiteNumber,
+  auxHeat3: finiteNumber,
+  cool1: finiteNumber,
+  cool2: finiteNumber,
+  fan: finiteNumber,
+  humidifier: finiteNumber,
+  dehumidifier: finiteNumber,
+});
+
+const outputSchema = z.object({
+  thermostatId: boundedString(64),
+  thermostatName: boundedString(128),
+  lastReading: boundedString(32).nullable(),
+  readings: z
+    .array(
+      z.object({
+        time: boundedString(64),
+        actualTemp: finiteNumber,
+        actualHumidity: finiteNumber,
+        desiredHeat: finiteNumber,
+        desiredCool: finiteNumber,
+        equipment: equipmentSchema,
+      }),
+    )
+    .max(12),
+});
 
 export function registerGetExtendedRuntime(
   server: McpServer,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ): void {
-  server.registerTool(
+  registerEcobeeTool(
+    server,
+    api,
     "get_extended_runtime",
     {
       description:
         "Get near-real-time 5-minute interval runtime data (last ~15 minutes). Shows actual temps, setpoints, humidity, and equipment runtime in seconds. Updated every 15 minutes by the thermostat.",
-      inputSchema: {
-        thermostatId: z
-          .string()
-          .optional()
-          .describe(
-            "Thermostat ID. Omit to use the first registered thermostat.",
-          ),
-      },
+      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      outputSchema,
+      annotations: readOnlyAnnotations,
     },
     async (args) => {
       const id = await resolveId(args.thermostatId, api, cache);
@@ -34,27 +71,23 @@ export function registerGetExtendedRuntime(
       });
 
       if (thermostats.length === 0) {
-        return {
-          content: [
-            { type: "text" as const, text: "No thermostat found." },
-          ],
-          isError: true,
-        };
+        return toolError("No thermostat found.");
       }
 
       const t = thermostats[0];
       const ext = t.extendedRuntime;
 
       if (!ext) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No extended runtime data available.",
-            },
-          ],
-          isError: true,
-        };
+        return structuredResult(
+          outputSchema,
+          {
+            thermostatId: t.identifier,
+            thermostatName: t.name,
+            lastReading: null,
+            readings: [],
+          },
+          "No extended runtime data available.",
+        );
       }
 
       // Convert interval numbers to timestamps
@@ -86,20 +119,20 @@ export function registerGetExtendedRuntime(
         };
       });
 
-      const result = {
-        thermostat: t.name,
-        lastReading: ext.lastReadingTimestamp,
-        readings,
-      };
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
+      return structuredResult(
+        outputSchema,
+        {
+          thermostatId: t.identifier,
+          thermostatName: t.name,
+          lastReading: ext.lastReadingTimestamp,
+          readings,
+        },
+        {
+          thermostat: t.name,
+          lastReading: ext.lastReadingTimestamp,
+          readings,
+        },
+      );
     },
   );
 }

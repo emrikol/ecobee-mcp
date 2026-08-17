@@ -47,9 +47,7 @@ function isValidPlugin(obj: unknown): obj is EcobeePlugin {
  * Only enabled when ENABLE_PLUGINS=1 env var is set.
  * Returns loaded plugins; first plugin with credentialProvider wins.
  */
-export async function loadPlugins(
-  baseDir?: string,
-): Promise<EcobeePlugin[]> {
+export async function loadPlugins(baseDir?: string): Promise<EcobeePlugin[]> {
   if (process.env.ENABLE_PLUGINS !== "1") {
     return [];
   }
@@ -81,9 +79,7 @@ export async function loadPlugins(
     // Symlink protection: resolved path must stay inside plugin dir
     const resolvedPath = await realpath(fullPath);
     if (!resolvedPath.startsWith(resolvedPluginDir)) {
-      console.warn(
-        `[plugins] Skipping ${filename}: resolved path ${resolvedPath} escapes plugin directory`,
-      );
+      console.warn("[plugins] Skipping plugin that escapes plugin directory");
       continue;
     }
 
@@ -94,29 +90,25 @@ export async function loadPlugins(
 
       if (!isValidPlugin(plugin)) {
         console.warn(
-          `[plugins] Skipping ${filename}: does not match EcobeePlugin interface`,
+          "[plugins] Skipping plugin: does not match EcobeePlugin interface",
         );
         continue;
       }
 
       if (plugin.credentialProvider) {
         if (credentialProviderOwner) {
-          console.warn(
-            `[plugins] ${filename} provides credentialProvider, but ${credentialProviderOwner} already registered one. Ignoring.`,
-          );
+          console.warn("[plugins] Ignoring duplicate credential provider");
           plugin.credentialProvider = undefined;
         } else {
           credentialProviderOwner = filename;
-          console.log(
-            `[plugins] ${filename} registered as credential provider`,
-          );
+          console.log("[plugins] Registered credential provider");
         }
       }
 
       plugins.push(plugin);
-      console.log(`[plugins] Loaded: ${plugin.name} (${filename})`);
-    } catch (err) /* v8 ignore start -- Integration test: malformed/unloadable plugin .js file. */ {
-      console.error(`[plugins] Failed to load ${filename}:`, err);
+      console.log("[plugins] Loaded plugin");
+    } catch /* v8 ignore start -- Integration test: malformed/unloadable plugin .js file. */ {
+      console.error("[plugins] Failed to load plugin");
     } /* v8 ignore stop */
   }
 

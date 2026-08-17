@@ -1,11 +1,13 @@
+import type { McpServer } from "@modelcontextprotocol/server";
+
 /* v8 ignore start -- Integration test: MCP resource handlers.
    Test by reading ecobee://thermostat/status, ecobee://thermostat/sensors,
    and ecobee://thermostat/weather through an MCP client session. Verify
    data shape, temperature conversion, and on-demand cache behavior. */
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { fromEcobeeTemp } from "../ecobee/types.js";
+import { registerEcobeeResource } from "./register.js";
 
 /**
  * Register all MCP resources.
@@ -16,24 +18,23 @@ export function registerAllResources(
   cache: EcobeeCache,
 ): void {
   // Thermostat status resource
-  server.registerResource(
+  registerEcobeeResource(
+    server,
+    api,
     "thermostat_status",
     "ecobee://thermostat/status",
     { description: "Current thermostat state (on-demand fetch)" },
     async () => {
-      const thermostats = await cache.getOrFetch(
-        "first:status",
-        async () => {
-          return api.getThermostats({
-            selectionType: "registered",
-            selectionMatch: "",
-            includeRuntime: true,
-            includeSettings: true,
-            includeEvents: true,
-            includeEquipmentStatus: true,
-          });
-        },
-      );
+      const thermostats = await cache.getOrFetch("first:status", async () => {
+        return api.getThermostats({
+          selectionType: "registered",
+          selectionMatch: "",
+          includeRuntime: true,
+          includeSettings: true,
+          includeEvents: true,
+          includeEquipmentStatus: true,
+        });
+      });
 
       const data = thermostats.map((t) => ({
         id: t.identifier,
@@ -44,12 +45,8 @@ export function registerAllResources(
           : null,
         humidity: t.runtime?.actualHumidity,
         hvacMode: t.settings?.hvacMode,
-        desiredHeat: t.runtime
-          ? fromEcobeeTemp(t.runtime.desiredHeat)
-          : null,
-        desiredCool: t.runtime
-          ? fromEcobeeTemp(t.runtime.desiredCool)
-          : null,
+        desiredHeat: t.runtime ? fromEcobeeTemp(t.runtime.desiredHeat) : null,
+        desiredCool: t.runtime ? fromEcobeeTemp(t.runtime.desiredCool) : null,
         equipmentStatus: t.equipmentStatus,
       }));
 
@@ -66,21 +63,20 @@ export function registerAllResources(
   );
 
   // Sensor data resource
-  server.registerResource(
+  registerEcobeeResource(
+    server,
+    api,
     "thermostat_sensors",
     "ecobee://thermostat/sensors",
     { description: "Remote sensor data (on-demand fetch)" },
     async () => {
-      const thermostats = await cache.getOrFetch(
-        "first:sensors",
-        async () => {
-          return api.getThermostats({
-            selectionType: "registered",
-            selectionMatch: "",
-            includeSensors: true,
-          });
-        },
-      );
+      const thermostats = await cache.getOrFetch("first:sensors", async () => {
+        return api.getThermostats({
+          selectionType: "registered",
+          selectionMatch: "",
+          includeSensors: true,
+        });
+      });
 
       const sensors = thermostats.flatMap((t) =>
         (t.remoteSensors ?? []).map((s) => {
@@ -117,21 +113,20 @@ export function registerAllResources(
   );
 
   // Weather resource
-  server.registerResource(
+  registerEcobeeResource(
+    server,
+    api,
     "thermostat_weather",
     "ecobee://thermostat/weather",
     { description: "Weather data from thermostat's station (on-demand fetch)" },
     async () => {
-      const thermostats = await cache.getOrFetch(
-        "first:weather",
-        async () => {
-          return api.getThermostats({
-            selectionType: "registered",
-            selectionMatch: "",
-            includeWeather: true,
-          });
-        },
-      );
+      const thermostats = await cache.getOrFetch("first:weather", async () => {
+        return api.getThermostats({
+          selectionType: "registered",
+          selectionMatch: "",
+          includeWeather: true,
+        });
+      });
 
       const weather = thermostats
         .filter((t) => t.weather)

@@ -1,36 +1,40 @@
 # ecobee-mcp
 
-An MCP server for controlling [Ecobee](https://www.ecobee.com/) thermostats through any MCP-compatible client (Claude Desktop, Claude Code, etc.).
+An MCP server for controlling [Ecobee](https://www.ecobee.com/) thermostats through clients that support MCP `2026-07-28`.
 
-Built with TypeScript, Express 5, and the [Model Context Protocol SDK](https://github.com/modelcontextprotocol/typescript-sdk).
+Built with TypeScript, Express 5, and the official split v2 packages `@modelcontextprotocol/server` and `@modelcontextprotocol/node`.
+
+Version 2 is forward-only: it uses `server/discover`, advertises only MCP `2026-07-28`, and rejects the legacy `initialize` handshake. The HTTP endpoint remains `/mcp`.
 
 ## Features
 
 **24 tools** covering the full Ecobee API:
 
-| Read | Write |
-|---|---|
-| List thermostats | Set temperature |
-| Thermostat status | Set HVAC mode |
-| Remote sensors | Set hold (comfort profile) |
-| Weather forecast | Resume schedule |
-| Schedule | Set vacation |
-| Vacations | Acknowledge alert |
-| Alerts | Send thermostat message |
-| Runtime report | Update comfort profile |
-| Extended runtime | Update house details |
-| Demand response | Manage thermostat groups |
-| Utility info | |
-| Technician info | |
-| House details | |
-| Thermostat groups | |
+| Read              | Write                      |
+| ----------------- | -------------------------- |
+| List thermostats  | Set temperature            |
+| Thermostat status | Set HVAC mode              |
+| Remote sensors    | Set hold (comfort profile) |
+| Weather forecast  | Resume schedule            |
+| Schedule          | Set vacation               |
+| Vacations         | Acknowledge alert          |
+| Alerts            | Send thermostat message    |
+| Runtime report    | Update comfort profile     |
+| Extended runtime  | Update house details       |
+| Demand response   | Manage thermostat groups   |
+| Utility info      |                            |
+| Technician info   |                            |
+| House details     |                            |
+| Thermostat groups |                            |
 
 **3 resources** for quick context:
+
 - `ecobee://thermostat/status` — current thermostat state
 - `ecobee://thermostat/sensors` — remote sensor readings
 - `ecobee://thermostat/weather` — weather forecast data
 
 **Other:**
+
 - Bearer token authentication
 - Two auth modes: `readonly` (another app manages tokens) or `full` (manages its own OAuth refresh)
 - Plugin system for custom credential providers and extra tools
@@ -104,20 +108,32 @@ The server listens on `http://0.0.0.0:3000/mcp` with a health check at `/health`
 
 ## MCP Client Configuration
 
-Point your MCP client at the server. For example, in Claude Desktop:
+Point a modern MCP client at `/mcp`, send the configured bearer token, and explicitly enable the `2026-07-28` negotiation flow. The official TypeScript v2 client configuration is:
 
-```json
-{
-  "mcpServers": {
-    "ecobee": {
-      "url": "http://localhost:3000/mcp",
-      "headers": {
-        "Authorization": "Bearer your-auth-token-here"
-      }
-    }
-  }
-}
+```typescript
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+
+const client = new Client(
+  { name: "my-client", version: "1.0.0" },
+  { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+);
+const transport = new StreamableHTTPClientTransport(
+  new URL("http://localhost:3000/mcp"),
+  {
+    requestInit: {
+      headers: { Authorization: "Bearer your-auth-token-here" },
+    },
+  },
+);
+await client.connect(transport);
 ```
+
+The v2 client still defaults to its legacy connection flow unless `versionNegotiation` is configured. A client that cannot perform `server/discover` and send the modern per-request metadata cannot consume this endpoint.
+
+The server advertises only tools and resources. It intentionally does not advertise prompts, sampling, elicitation, logging, subscriptions, experimental extensions, or Tasks.
 
 ## Auth Modes
 
@@ -127,6 +143,7 @@ Point your MCP client at the server. For example, in Claude Desktop:
 ## Plugins
 
 Plugins are opt-in (`ENABLE_PLUGINS=1`) and loaded from the `plugins/` directory. A plugin can:
+
 - Provide a custom credential provider (read tokens from any source)
 - Register additional MCP tools and resources
 - Hook into token refresh events
@@ -140,7 +157,11 @@ interface EcobeePlugin {
   name: string;
   credentialProvider?: CredentialProvider;
   onTokenRefresh?: (creds: EcobeeCredentials) => Promise<void>;
-  registerTools?: (server: McpServer, api: EcobeeApiClient, cache: EcobeeCache) => void;
+  registerTools?: (
+    server: McpServer,
+    api: EcobeeApiClient,
+    cache: EcobeeCache,
+  ) => void;
   registerResources?: (server: McpServer, cache: EcobeeCache) => void;
 }
 ```

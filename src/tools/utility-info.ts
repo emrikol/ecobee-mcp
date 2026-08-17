@@ -1,27 +1,45 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { resolveId } from "./set-temperature.js";
+import {
+  boundedString,
+  optionalThermostatIdSchema,
+  readOnlyAnnotations,
+  registerEcobeeTool,
+  structuredResult,
+  toolError,
+} from "./contracts.js";
+
+const outputSchema = z.object({
+  thermostatId: boundedString(64),
+  thermostatName: boundedString(128),
+  utility: z
+    .object({
+      name: boundedString(256),
+      phone: boundedString(64),
+      email: boundedString(320),
+      web: boundedString(2_048),
+    })
+    .nullable(),
+});
 
 export function registerGetUtilityInfo(
   server: McpServer,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ): void {
-  server.registerTool(
+  registerEcobeeTool(
+    server,
+    api,
     "get_utility_info",
     {
       description:
         "Get utility company information associated with the thermostat.",
-      inputSchema: {
-        thermostatId: z
-          .string()
-          .optional()
-          .describe(
-            "Thermostat ID. Omit to use the first registered thermostat.",
-          ),
-      },
+      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      outputSchema,
+      annotations: readOnlyAnnotations,
     },
     async (args) => {
       const id = await resolveId(args.thermostatId, api, cache);
@@ -33,41 +51,38 @@ export function registerGetUtilityInfo(
       });
 
       if (thermostats.length === 0) {
-        return {
-          content: [
-            { type: "text" as const, text: "No thermostat found." },
-          ],
-          isError: true,
-        };
+        return toolError("No thermostat found.");
       }
 
       const t = thermostats[0];
       const utility = t.utility;
 
       if (!utility) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No utility information available for this thermostat.",
-            },
-          ],
-        };
+        return structuredResult(
+          outputSchema,
+          {
+            thermostatId: t.identifier,
+            thermostatName: t.name,
+            utility: null,
+          },
+          "No utility information available for this thermostat.",
+        );
       }
 
-      const result = {
-        thermostat: t.name,
-        utility,
-      };
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result, null, 2),
+      return structuredResult(
+        outputSchema,
+        {
+          thermostatId: t.identifier,
+          thermostatName: t.name,
+          utility: {
+            name: utility.name,
+            phone: utility.phone,
+            email: utility.email,
+            web: utility.web,
           },
-        ],
-      };
+        },
+        { thermostat: t.name, utility },
+      );
     },
   );
 }

@@ -1,10 +1,18 @@
 import { vi } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type ServerContext } from "@modelcontextprotocol/server";
 import { EcobeeCache } from "../../src/ecobee/cache.js";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ToolRegistry = Record<string, { handler: (...args: any[]) => Promise<any> }>;
+interface TestToolResult {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: Record<string, unknown>;
+}
+
+export type ToolRegistry = Record<
+  string,
+  { handler: (...args: unknown[]) => Promise<TestToolResult> }
+>;
 
 export function getTools(server: McpServer): ToolRegistry {
   return (server as unknown as { _registeredTools: ToolRegistry })
@@ -18,8 +26,9 @@ export function createServer(): { server: McpServer; cache: EcobeeCache } {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const signal = { signal: new AbortController().signal } as any;
+export const signal = {
+  mcpReq: { signal: new AbortController().signal },
+} as unknown as ServerContext;
 
 export function parseResult(result: {
   content: Array<{ type: string; text: string }>;

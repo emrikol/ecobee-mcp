@@ -1,45 +1,70 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
+import {
+  boundedString,
+  finiteNumber,
+  MAX_SENSORS,
+  optionalThermostatIdSchema,
+  readOnlyAnnotations,
+  registerEcobeeTool,
+  structuredResult,
+} from "./contracts.js";
+
+const outputSchema = z.object({
+  thermostatId: boundedString(64).nullable(),
+  sensors: z
+    .array(
+      z.object({
+        id: boundedString(64),
+        name: boundedString(128),
+        type: boundedString(64),
+        inUse: z.boolean(),
+        temperature: finiteNumber.optional(),
+        humidity: finiteNumber.optional(),
+        occupancy: z.boolean().optional(),
+      }),
+    )
+    .max(MAX_SENSORS),
+});
 
 export function registerGetSensors(
   server: McpServer,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ): void {
-  server.registerTool(
+  registerEcobeeTool(
+    server,
+    api,
     "get_sensors",
     {
       description:
         "Get all remote sensor readings including temperature, humidity, and occupancy for a thermostat.",
-      inputSchema: {
-        thermostatId: z
-          .string()
-          .optional()
-          .describe("Thermostat ID. Omit to use the first registered thermostat."),
-      },
+      inputSchema: z.object({ thermostatId: optionalThermostatIdSchema }),
+      outputSchema,
+      annotations: readOnlyAnnotations,
     },
     async ({ thermostatId }) => {
       const id = thermostatId ?? "first";
 
-      const thermostats = await cache.getOrFetch(
-        `${id}:sensors`,
-        async () => {
-          return api.getThermostats({
-            selectionType: thermostatId ? "thermostats" : "registered",
-            selectionMatch: thermostatId ?? "",
-            includeSensors: true,
-          });
-        },
-      );
+      const thermostats = await cache.getOrFetch(`${id}:sensors`, async () => {
+        return api.getThermostats({
+          selectionType: thermostatId ? "thermostats" : "registered",
+          selectionMatch: thermostatId ?? "",
+          includeSensors: true,
+        });
+      });
 
       if (thermostats.length === 0) {
-        return {
-          content: [
-            { type: "text" as const, text: "No thermostats found." },
-          ],
-        };
+        return structuredResult(
+          outputSchema,
+          {
+            thermostatId: null,
+            sensors: [],
+          },
+          "No thermostats found.",
+        );
       }
 
       const sensors = thermostats[0].remoteSensors ?? [];
@@ -65,14 +90,14 @@ export function registerGetSensors(
         };
       });
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
+      return structuredResult(
+        outputSchema,
+        {
+          thermostatId: thermostats[0].identifier,
+          sensors: result,
+        },
+        result,
+      );
     },
   );
 }

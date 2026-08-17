@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
 import { registerGetDemandResponse } from "../../src/tools/demand-response.js";
-import { createServer, getTools, mockApiBase, parseResult, signal } from "./helpers.js";
+import {
+  createServer,
+  getTools,
+  mockApiBase,
+  parseResult,
+  signal,
+} from "./helpers.js";
 
 describe("get_demand_response tool", () => {
   it("should return DR events", async () => {

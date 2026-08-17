@@ -1,51 +1,64 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { toEcobeeTemp } from "../ecobee/types.js";
+import {
+  mutationAnnotations,
+  mutationVerificationSchema,
+  optionalThermostatIdSchema,
+  reconcileControlState,
+  registerEcobeeTool,
+  structuredResult,
+  temperatureSchema,
+  thermostatControlStateSchema,
+} from "./contracts.js";
+
+const inputSchema = z
+  .object({
+    thermostatId: optionalThermostatIdSchema,
+    heatTemp: temperatureSchema.optional(),
+    coolTemp: temperatureSchema.optional(),
+    holdType: z
+      .enum(["nextTransition", "indefinite"])
+      .default("nextTransition"),
+  })
+  .refine(
+    ({ heatTemp, coolTemp }) =>
+      heatTemp !== undefined || coolTemp !== undefined,
+    { message: "At least one of heatTemp or coolTemp is required." },
+  );
+
+const outputSchema = z.object({
+  thermostatId: z.string().min(1).max(64),
+  requestedChange: z.object({
+    heatTemp: temperatureSchema.optional(),
+    coolTemp: temperatureSchema.optional(),
+    holdType: z.enum(["nextTransition", "indefinite"]),
+  }),
+  resultingState: z.object({
+    thermostat: thermostatControlStateSchema.nullable(),
+    verification: mutationVerificationSchema,
+  }),
+});
 
 export function registerSetTemperature(
   server: McpServer,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ): void {
-  server.registerTool(
+  registerEcobeeTool(
+    server,
+    api,
     "set_temperature",
     {
       description:
         "Set a temperature hold on the thermostat. Specify heat and/or cool set points in degrees F.",
-      inputSchema: {
-        thermostatId: z
-          .string()
-          .optional()
-          .describe("Thermostat ID. Omit to use the first registered thermostat."),
-        heatTemp: z
-          .number()
-          .optional()
-          .describe("Heat set point in degrees F (e.g., 68)"),
-        coolTemp: z
-          .number()
-          .optional()
-          .describe("Cool set point in degrees F (e.g., 76)"),
-        holdType: z
-          .enum(["nextTransition", "indefinite"])
-          .default("nextTransition")
-          .describe("How long to hold: until next schedule transition or indefinitely"),
-      },
+      inputSchema,
+      outputSchema,
+      annotations: mutationAnnotations,
     },
     async ({ thermostatId, heatTemp, coolTemp, holdType }) => {
-      if (heatTemp === undefined && coolTemp === undefined) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Error: Must specify at least one of heatTemp or coolTemp.",
-            },
-          ],
-          isError: true,
-        };
-      }
-
       // Resolve thermostat ID if not provided
       const id = await resolveId(thermostatId, api, cache);
 
@@ -61,14 +74,27 @@ export function registerSetTemperature(
 
       cache.invalidate(id);
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Temperature hold set on ${id}: ${heatTemp !== undefined ? `heat=${heatTemp}°F` : ""}${heatTemp !== undefined && coolTemp !== undefined ? ", " : ""}${coolTemp !== undefined ? `cool=${coolTemp}°F` : ""} (${holdType})`,
-          },
-        ],
-      };
+      const state = await reconcileControlState(api, id);
+      const confirmed =
+        state !== null &&
+        (heatTemp === undefined || state.desiredHeat === heatTemp) &&
+        (coolTemp === undefined || state.desiredCool === coolTemp);
+      return structuredResult(outputSchema, {
+        thermostatId: id,
+        requestedChange: {
+          ...(heatTemp !== undefined && { heatTemp }),
+          ...(coolTemp !== undefined && { coolTemp }),
+          holdType,
+        },
+        resultingState: {
+          thermostat: state,
+          verification: !state
+            ? "unavailable"
+            : confirmed
+              ? "confirmed"
+              : "accepted",
+        },
+      });
     },
   );
 }

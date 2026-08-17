@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { EcobeeApiClient, EcobeeApiError } from "../../src/ecobee/api.js";
+import {
+  AmbiguousMutationDeliveryError,
+  EcobeeApiClient,
+  EcobeeApiError,
+  EcobeeRateLimitError,
+  EcobeeResponseLimitError,
+  EcobeeTimeoutError,
+} from "../../src/ecobee/api.js";
 import type { EcobeeAuth } from "../../src/ecobee/auth.js";
 
 function mockAuth(): EcobeeAuth {
@@ -139,7 +146,10 @@ describe("EcobeeApiClient", () => {
     // not a 401. Before this was handled the request threw and the server kept
     // its stale in-memory token until restarted.
     const expired = {
-      status: { code: 14, message: "Authentication token has expired. Refresh your tokens. " },
+      status: {
+        code: 14,
+        message: "Authentication token has expired. Refresh your tokens. ",
+      },
     };
     const success = {
       status: { code: 0, message: "Success" },
@@ -176,7 +186,10 @@ describe("EcobeeApiClient", () => {
 
   it("re-reads credentials when code 14 arrives alongside a 2xx status", async () => {
     const expired = {
-      status: { code: 14, message: "Authentication token has expired. Refresh your tokens. " },
+      status: {
+        code: 14,
+        message: "Authentication token has expired. Refresh your tokens. ",
+      },
     };
     const success = {
       status: { code: 0, message: "Success" },
@@ -212,7 +225,10 @@ describe("EcobeeApiClient", () => {
 
   it("retries an expired token only once", async () => {
     const expired = {
-      status: { code: 14, message: "Authentication token has expired. Refresh your tokens. " },
+      status: {
+        code: 14,
+        message: "Authentication token has expired. Refresh your tokens. ",
+      },
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
@@ -270,5 +286,186 @@ describe("EcobeeApiClient", () => {
     ).rejects.toThrow(EcobeeApiError);
 
     expect(auth.handleUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("enforces a request deadline across Ecobee I/O", async () => {
+    const fetchMock = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const api = new EcobeeApiClient(auth, {
+      fetch: fetchMock as typeof fetch,
+      requestTimeoutMs: 10,
+    });
+
+    await expect(
+      api.getThermostats({
+        selectionType: "registered",
+        selectionMatch: "",
+      }),
+    ).rejects.toBeInstanceOf(EcobeeTimeoutError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates request cancellation into Ecobee fetch", async () => {
+    let requestStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      requestStarted = resolve;
+    });
+    const fetchMock = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          requestStarted();
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const api = new EcobeeApiClient(auth, { fetch: fetchMock as typeof fetch });
+    const controller = new AbortController();
+    const request = api.withRequestSignal(controller.signal, () =>
+      api.getThermostats({ selectionType: "registered", selectionMatch: "" }),
+    );
+
+    await started;
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a rate-limited read once with a bounded delay", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "0" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: { code: 0, message: "Success" },
+            thermostatList: [{ identifier: "123", name: "Main" }],
+          }),
+          { status: 200 },
+        ),
+      );
+    const api = new EcobeeApiClient(auth, { fetch: fetchMock as typeof fetch });
+
+    const result = await api.getThermostats({
+      selectionType: "registered",
+      selectionMatch: "",
+    });
+
+    expect(result[0].identifier).toBe("123");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("never retries a rate-limited mutation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "0" },
+      }),
+    );
+    const api = new EcobeeApiClient(auth, { fetch: fetchMock as typeof fetch });
+
+    await expect(api.sendMessage("123", "hello")).rejects.toBeInstanceOf(
+      EcobeeRateLimitError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects responses larger than the configured limit", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("x".repeat(65), {
+        status: 200,
+        headers: { "content-length": "65" },
+      }),
+    );
+    const api = new EcobeeApiClient(auth, {
+      fetch: fetchMock as typeof fetch,
+      maxResponseBytes: 64,
+    });
+
+    await expect(
+      api.getThermostats({
+        selectionType: "registered",
+        selectionMatch: "",
+      }),
+    ).rejects.toBeInstanceOf(EcobeeResponseLimitError);
+  });
+
+  it("marks ambiguous mutation delivery and does not retry", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("socket reset after write access_token=never-expose"),
+      );
+    const api = new EcobeeApiClient(auth, { fetch: fetchMock as typeof fetch });
+
+    let caught: unknown;
+    try {
+      await api.sendMessage("123", "hello");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AmbiguousMutationDeliveryError);
+    expect(String(caught)).not.toContain("never-expose");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an invalid success response after a mutation as ambiguous", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("not-json", { status: 200 }));
+    const api = new EcobeeApiClient(auth, {
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await expect(api.sendMessage("123", "hello")).rejects.toBeInstanceOf(
+      AmbiguousMutationDeliveryError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose an Ecobee error body containing secrets", async () => {
+    const body = {
+      status: {
+        code: 7,
+        message: "refresh_token=refresh-secret authorization_code=code-secret",
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 400,
+      }),
+    );
+    const api = new EcobeeApiClient(auth, { fetch: fetchMock as typeof fetch });
+
+    let caught: unknown;
+    try {
+      await api.getThermostats({
+        selectionType: "registered",
+        selectionMatch: "",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(EcobeeApiError);
+    expect(String(caught)).not.toContain("refresh-secret");
+    expect(String(caught)).not.toContain("code-secret");
   });
 });

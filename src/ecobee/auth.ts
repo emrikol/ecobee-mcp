@@ -1,8 +1,5 @@
 import type { CredentialProvider } from "../credentials/provider.js";
-import type {
-  EcobeeCredentials,
-  EcobeeTokenResponse,
-} from "./types.js";
+import type { EcobeeCredentials, EcobeeTokenResponse } from "./types.js";
 
 export type AuthMode = "readonly" | "full";
 
@@ -30,9 +27,7 @@ export class EcobeeAuth {
   ) {}
 
   /** Register a hook to be called after token refresh (full mode only). */
-  addTokenRefreshHook(
-    hook: (creds: EcobeeCredentials) => Promise<void>,
-  ): void {
+  addTokenRefreshHook(hook: (creds: EcobeeCredentials) => Promise<void>): void {
     this.onTokenRefreshHooks.push(hook);
   }
 
@@ -108,13 +103,22 @@ export class EcobeeAuth {
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `Token refresh failed: ${response.status} ${response.statusText} - ${body}`,
-      );
+      // Never forward the provider response body: OAuth failures commonly echo
+      // credential material or authorization codes.
+      throw new Error(`Token refresh failed with HTTP ${response.status}.`);
     }
 
     const tokenData: EcobeeTokenResponse = await response.json();
+    if (
+      typeof tokenData.access_token !== "string" ||
+      tokenData.access_token.length === 0 ||
+      typeof tokenData.refresh_token !== "string" ||
+      tokenData.refresh_token.length === 0 ||
+      !Number.isFinite(tokenData.expires_in) ||
+      tokenData.expires_in <= 0
+    ) {
+      throw new Error("Token refresh returned an invalid response.");
+    }
 
     const newCreds: EcobeeCredentials = {
       accessToken: tokenData.access_token,
@@ -130,8 +134,8 @@ export class EcobeeAuth {
     for (const hook of this.onTokenRefreshHooks) {
       try {
         await hook(newCreds);
-      } catch (err) {
-        console.error("[auth] Token refresh hook error:", err);
+      } catch {
+        console.error("[auth] Token refresh hook failed");
       }
     }
 

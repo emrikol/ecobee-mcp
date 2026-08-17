@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import type { EcobeeApiClient } from "../../src/ecobee/api.js";
-import { registerSetTemperature, resolveId } from "../../src/tools/set-temperature.js";
+import {
+  registerSetTemperature,
+  resolveId,
+} from "../../src/tools/set-temperature.js";
 import { EcobeeCache } from "../../src/ecobee/cache.js";
 import { createServer, getTools, mockApiBase, signal } from "./helpers.js";
 
@@ -72,6 +75,35 @@ describe("set_temperature tool", () => {
 
     expect(result.isError).toBe(true);
   });
+
+  it("does not retry a completed mutation when reconciliation is unavailable", async () => {
+    const { server, cache } = createServer();
+    const setHold = vi.fn().mockResolvedValue(undefined);
+    const api = {
+      ...mockApiBase(),
+      setHold,
+      getThermostats: vi
+        .fn()
+        .mockRejectedValue(new Error("readback unavailable")),
+    } as unknown as EcobeeApiClient;
+    registerSetTemperature(server, api, cache);
+
+    const result = await getTools(server)["set_temperature"].handler(
+      {
+        thermostatId: "123",
+        heatTemp: 70,
+        holdType: "nextTransition",
+      },
+      signal,
+    );
+
+    expect(setHold).toHaveBeenCalledTimes(1);
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      resultingState: { verification: string };
+    };
+    expect(structured.resultingState.verification).toBe("unavailable");
+  });
 });
 
 describe("resolveId", () => {
@@ -85,9 +117,9 @@ describe("resolveId", () => {
   it("should resolve first thermostat when no ID given", async () => {
     const api = {
       ...mockApiBase(),
-      getThermostats: vi.fn().mockResolvedValue([
-        { identifier: "first123", name: "Main" },
-      ]),
+      getThermostats: vi
+        .fn()
+        .mockResolvedValue([{ identifier: "first123", name: "Main" }]),
     } as unknown as EcobeeApiClient;
     const cache = new EcobeeCache();
     const id = await resolveId(undefined, api, cache);
