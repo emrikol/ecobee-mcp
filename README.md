@@ -2,7 +2,17 @@
 
 An MCP server for controlling [Ecobee](https://www.ecobee.com/) thermostats through clients that support MCP `2026-07-28`.
 
-Built with TypeScript, Node's built-in HTTP and compression modules, and the official split v2 packages `@modelcontextprotocol/server` and `@modelcontextprotocol/node`. Those two MCP packages are the only direct production dependencies.
+Built with TypeScript, Node's built-in HTTP and compression modules, and a
+performance-focused fork of the official split v2 TypeScript SDK. The
+`@modelcontextprotocol/core`, `@modelcontextprotocol/server`, and
+`@modelcontextprotocol/node` packages are the only direct production
+dependencies.
+
+The pinned SDK packages are built from
+[`emrikol/typescript-sdk-mod-performance`](https://github.com/emrikol/typescript-sdk-mod-performance)
+commit `346fdcc5e6be5c2b2a92b9043dc1d7ec41d570f9`. Their committed tarballs,
+checksums, license, and rebuild instructions are documented in
+[vendor/README.md](vendor/README.md).
 
 Version 2 is forward-only: it uses `server/discover`, advertises only MCP `2026-07-28`, and rejects the legacy `initialize` handshake. The HTTP endpoint remains `/mcp`.
 

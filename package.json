@@ -1,6 +1,6 @@
 {
   "name": "ecobee-mcp",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "MCP server for Ecobee thermostat control",
   "type": "module",
   "main": "dist/index.js",
@@ -17,12 +17,13 @@
     "profile": "PERF_PROFILE_DIR=.artifacts/performance node --expose-gc --import tsx bench/benchmark.ts",
     "profile:analyze": "node --import tsx bench/analyze-profile.ts",
     "profile:trace": "PERF_PROFILE_DIR=.artifacts/performance PERF_PROFILE_LABEL=runtime-trace node --trace-events-enabled --trace-event-categories=v8,node,node.async_hooks --trace-event-file-pattern='.artifacts/performance/node-trace-${pid}.json' --expose-gc --import tsx bench/benchmark.ts",
-    "format": "prettier --write src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md package.json tsconfig*.json",
-    "format:check": "prettier --check src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md package.json tsconfig*.json"
+    "format": "prettier --write src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md vendor/README.md package.json tsconfig*.json",
+    "format:check": "prettier --check src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md vendor/README.md package.json tsconfig*.json"
   },
   "dependencies": {
-    "@modelcontextprotocol/node": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0"
+    "@modelcontextprotocol/core": "file:vendor/modelcontextprotocol-core-2.0.0-mod-perf-346fdcc.tgz",
+    "@modelcontextprotocol/node": "file:vendor/modelcontextprotocol-node-2.0.0-mod-perf-346fdcc.tgz",
+    "@modelcontextprotocol/server": "file:vendor/modelcontextprotocol-server-2.0.0-mod-perf-346fdcc.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

@@ -19,6 +19,11 @@ rsync -avz \
   package.json package-lock.json \
   "$PI_HOST:$PI_DIR/"
 
+echo "==> Syncing pinned SDK packages to Pi..."
+rsync -avz --delete \
+  vendor \
+  "$PI_HOST:$PI_DIR/"
+
 echo "==> Installing production deps on Pi..."
 ssh "$PI_HOST" "cd $PI_DIR && npm install --production"
 
