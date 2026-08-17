@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -15,24 +15,24 @@ import {
   toolError,
 } from "./contracts.js";
 
-const eventSchema = z.object({
+const eventSchema = s.object({
   name: boundedString(128),
-  running: z.boolean(),
+  running: s.boolean(),
   start: boundedString(32),
   end: boundedString(32),
-  isOptional: z.boolean(),
+  isOptional: s.boolean(),
   dutyCyclePercentage: finiteNumber,
   coolHoldTemp: finiteNumber,
   heatHoldTemp: finiteNumber,
-  isTemperatureAbsolute: z.boolean(),
-  isTemperatureRelative: z.boolean(),
+  isTemperatureAbsolute: s.boolean(),
+  isTemperatureRelative: s.boolean(),
 });
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
   thermostatName: boundedString(128),
   drAcceptSetting: boundedString(64),
-  events: z.array(eventSchema).max(MAX_EVENTS),
+  events: s.array(eventSchema).max(MAX_EVENTS),
 });
 
 export function registerGetDemandResponse(
@@ -98,20 +98,12 @@ export function registerGetDemandResponse(
         isTemperatureRelative: e.isTemperatureRelative,
       }));
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: t.identifier,
-          thermostatName: t.name,
-          drAcceptSetting: drAccept,
-          events,
-        },
-        {
-          thermostat: t.name,
-          drAcceptSetting: drAccept,
-          events,
-        },
-      );
+      return structuredResult(outputSchema, {
+        thermostatId: t.identifier,
+        thermostatName: t.name,
+        drAcceptSetting: drAccept,
+        events,
+      });
     },
   );
 }

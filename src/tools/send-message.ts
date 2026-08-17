@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,7 +12,7 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const inputSchema = z.object({
+const inputSchema = s.object({
   thermostatId: optionalThermostatIdSchema,
   text: boundedString(500)
     .min(1)
@@ -20,13 +20,13 @@ const inputSchema = z.object({
     .describe("Message text to display on the thermostat (max 500 characters)"),
 });
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
-  requestedChange: z.object({
-    messageLength: z.number().int().min(0).max(500),
+  requestedChange: s.object({
+    messageLength: s.number().int().min(0).max(500),
     messageSha256: boundedString(64),
   }),
-  resultingState: z.object({ delivery: z.literal("accepted") }),
+  resultingState: s.object({ delivery: s.literal("accepted") }),
 });
 
 export function registerSendMessage(

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -13,18 +13,18 @@ import {
   thermostatControlStateSchema,
 } from "./contracts.js";
 
-const inputSchema = z.object({
+const inputSchema = s.object({
   thermostatId: optionalThermostatIdSchema,
-  resumeAll: z
+  resumeAll: s
     .boolean()
     .default(false)
     .describe("If true, removes all events including vacation holds."),
 });
 
-const outputSchema = z.object({
-  thermostatId: z.string().min(1).max(64),
-  requestedChange: z.object({ resumeAll: z.boolean() }),
-  resultingState: z.object({
+const outputSchema = s.object({
+  thermostatId: s.string().min(1).max(64),
+  requestedChange: s.object({ resumeAll: s.boolean() }),
+  resultingState: s.object({
     thermostat: thermostatControlStateSchema.nullable(),
     verification: mutationVerificationSchema,
   }),

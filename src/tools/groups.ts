@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { type Infer, schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,7 +12,7 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const syncNameSchema = z.enum([
+const syncNameSchema = s.enum([
   "Alerts",
   "SystemMode",
   "Schedule",
@@ -26,15 +26,15 @@ const syncNameSchema = z.enum([
   "Vacation",
 ]);
 
-const groupResultSchema = z.object({
+const groupResultSchema = s.object({
   groupRef: boundedString(128),
   groupName: boundedString(128),
-  thermostats: z.array(boundedString(64)).max(MAX_THERMOSTATS),
-  synchronizing: z.array(syncNameSchema).max(11),
+  thermostats: s.array(boundedString(64)).max(MAX_THERMOSTATS),
+  synchronizing: s.array(syncNameSchema).max(11),
 });
 
-const listOutputSchema = z.object({
-  groups: z.array(groupResultSchema).max(128),
+const listOutputSchema = s.object({
+  groups: s.array(groupResultSchema).max(128),
 });
 
 export function registerListGroups(
@@ -73,7 +73,7 @@ export function registerListGroups(
         };
       });
 
-      return structuredResult(listOutputSchema, { groups: result }, result);
+      return structuredResult(listOutputSchema, { groups: result });
     },
   );
 }
@@ -108,13 +108,13 @@ const syncLabels = {
 
 function synchronizedSettings(
   group: Partial<Record<(typeof syncFlags)[number], boolean>>,
-): Array<z.output<typeof syncNameSchema>> {
+): Array<Infer<typeof syncNameSchema>> {
   return syncFlags
     .filter((flag) => group[flag] === true)
     .map((flag) => syncLabels[flag]);
 }
 
-const manageInputSchema = z.object({
+const manageInputSchema = s.object({
   groupRef: boundedString(128)
     .optional()
     .describe(
@@ -123,34 +123,34 @@ const manageInputSchema = z.object({
   groupName: boundedString(128)
     .optional()
     .describe("Group name. Required when creating."),
-  thermostats: z
+  thermostats: s
     .array(boundedString(64))
     .max(MAX_THERMOSTATS)
     .optional()
     .describe(
       "Thermostat IDs in the group. Send empty array to delete the group.",
     ),
-  synchronizeAlerts: z.boolean().optional(),
-  synchronizeSystemMode: z.boolean().optional(),
-  synchronizeSchedule: z.boolean().optional(),
-  synchronizeQuickSave: z.boolean().optional(),
-  synchronizeReminders: z.boolean().optional(),
-  synchronizeContractorInfo: z.boolean().optional(),
-  synchronizeUserPreferences: z.boolean().optional(),
-  synchronizeUtilityInfo: z.boolean().optional(),
-  synchronizeLocation: z.boolean().optional(),
-  synchronizeReset: z.boolean().optional(),
-  synchronizeVacation: z.boolean().optional(),
+  synchronizeAlerts: s.boolean().optional(),
+  synchronizeSystemMode: s.boolean().optional(),
+  synchronizeSchedule: s.boolean().optional(),
+  synchronizeQuickSave: s.boolean().optional(),
+  synchronizeReminders: s.boolean().optional(),
+  synchronizeContractorInfo: s.boolean().optional(),
+  synchronizeUserPreferences: s.boolean().optional(),
+  synchronizeUtilityInfo: s.boolean().optional(),
+  synchronizeLocation: s.boolean().optional(),
+  synchronizeReset: s.boolean().optional(),
+  synchronizeVacation: s.boolean().optional(),
 });
 
 const requestedGroupSchema = manageInputSchema.omit({ groupRef: true });
-const manageOutputSchema = z.object({
-  target: z.object({ groupRef: boundedString(128).nullable() }),
+const manageOutputSchema = s.object({
+  target: s.object({ groupRef: boundedString(128).nullable() }),
   requestedChange: requestedGroupSchema,
-  action: z.enum(["created", "updated", "deleted"]),
-  resultingState: z.object({
-    groups: z.array(groupResultSchema).max(128),
-    verification: z.enum(["confirmed", "accepted"]),
+  action: s.enum(["created", "updated", "deleted"]),
+  resultingState: s.object({
+    groups: s.array(groupResultSchema).max(128),
+    verification: s.enum(["confirmed", "accepted"]),
   }),
 });
 

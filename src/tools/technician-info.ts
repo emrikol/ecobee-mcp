@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,10 +12,10 @@ import {
   toolError,
 } from "./contracts.js";
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
   thermostatName: boundedString(128),
-  technician: z
+  technician: s
     .object({
       contractorRef: boundedString(128),
       name: boundedString(256),
@@ -75,26 +75,22 @@ export function registerGetTechnicianInfo(
         );
       }
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: t.identifier,
-          thermostatName: t.name,
-          technician: {
-            contractorRef: tech.contractorRef,
-            name: tech.name,
-            phone: tech.phone,
-            streetAddress: tech.streetAddress,
-            city: tech.city,
-            provinceState: tech.provinceState,
-            country: tech.country,
-            postalCode: tech.postalCode,
-            email: tech.email,
-            web: tech.web,
-          },
+      return structuredResult(outputSchema, {
+        thermostatId: t.identifier,
+        thermostatName: t.name,
+        technician: {
+          contractorRef: tech.contractorRef,
+          name: tech.name,
+          phone: tech.phone,
+          streetAddress: tech.streetAddress,
+          city: tech.city,
+          provinceState: tech.provinceState,
+          country: tech.country,
+          postalCode: tech.postalCode,
+          email: tech.email,
+          web: tech.web,
         },
-        { thermostat: t.name, technician: tech },
-      );
+      });
     },
   );
 }

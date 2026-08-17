@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,7 +12,7 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const eventSchema = z.object({
+const eventSchema = s.object({
   type: boundedString(64),
   heatTemp: finiteNumber,
   coolTemp: finiteNumber,
@@ -20,13 +20,13 @@ const eventSchema = z.object({
   endTime: boundedString(8),
 });
 
-const outputSchema = z.object({
-  thermostat: z
+const outputSchema = s.object({
+  thermostat: s
     .object({
       id: boundedString(64),
       name: boundedString(128),
       thermostatTime: boundedString(32),
-      connected: z.boolean(),
+      connected: s.boolean(),
       temperature: finiteNumber.nullable(),
       humidity: finiteNumber.nullable(),
       hvacMode: boundedString(32),
@@ -120,7 +120,7 @@ export function registerGetThermostatStatus(
           : null,
       };
 
-      return structuredResult(outputSchema, { thermostat: result }, result);
+      return structuredResult(outputSchema, { thermostat: result });
     },
   );
 }

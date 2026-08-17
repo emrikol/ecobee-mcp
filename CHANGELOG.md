@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-08-17
+
+### Changed
+
+- Reduced direct production dependencies to the official `@modelcontextprotocol/server` and `@modelcontextprotocol/node` packages only. Node's built-in HTTP and zlib modules now provide the small required transport and selective-gzip surfaces.
+- Replaced Zod-authored runtime schemas with direct, bounded JSON Schemas validated by the MCP SDK. The complete 24-tool discovery document and pinned schema digest remain byte-for-byte unchanged.
+- Replaced duplicate structured-result serialization with an exact non-allocating JSON byte counter and removed dead non-string summary construction.
+- Reworked runtime-report CSV parsing to avoid a temporary split array for every interval row.
+
+### Performance
+
+- Improved the same deterministic unprofiled workload by 13.2% for discovery, 14.1% for sequential cached status, 20.8% for concurrent cached status, and 38.8% for full-day runtime intervals compared with 2.1.1.
+
+### Tests
+
+- Added a deterministic 1,000-case JSON byte-count oracle and a production dependency-boundary test while retaining the full protocol, schema, safety, cancellation, OAuth, rate-limit, deadline, and ambiguous-delivery suite.
+
 ## [2.1.1] - 2026-08-17
 
 ### Changed

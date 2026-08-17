@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -22,27 +22,27 @@ const DAY_NAMES = [
   "Saturday",
 ] as const;
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64).nullable(),
-  program: z
+  program: s
     .object({
       currentClimate: boundedString(64),
-      climates: z
+      climates: s
         .array(
-          z.object({
+          s.object({
             name: boundedString(128),
             ref: boundedString(64),
             type: boundedString(64),
             heatTemp: finiteNumber,
             coolTemp: finiteNumber,
-            isOccupied: z.boolean(),
+            isOccupied: s.boolean(),
           }),
         )
         .max(64),
-      schedule: z
+      schedule: s
         .array(
-          z.object({
-            day: z.enum([
+          s.object({
+            day: s.enum([
               "Sunday",
               "Monday",
               "Tuesday",
@@ -51,7 +51,7 @@ const outputSchema = z.object({
               "Friday",
               "Saturday",
             ]),
-            periods: z.array(boundedString(64)).max(48),
+            periods: s.array(boundedString(64)).max(48),
           }),
         )
         .max(7),
@@ -125,14 +125,10 @@ export function registerGetSchedule(
         })),
       };
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: thermostats[0].identifier,
-          program: result,
-        },
-        result,
-      );
+      return structuredResult(outputSchema, {
+        thermostatId: thermostats[0].identifier,
+        program: result,
+      });
     },
   );
 }

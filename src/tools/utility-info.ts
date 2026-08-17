@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,10 +12,10 @@ import {
   toolError,
 } from "./contracts.js";
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
   thermostatName: boundedString(128),
-  utility: z
+  utility: s
     .object({
       name: boundedString(256),
       phone: boundedString(64),
@@ -69,20 +69,16 @@ export function registerGetUtilityInfo(
         );
       }
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: t.identifier,
-          thermostatName: t.name,
-          utility: {
-            name: utility.name,
-            phone: utility.phone,
-            email: utility.email,
-            web: utility.web,
-          },
+      return structuredResult(outputSchema, {
+        thermostatId: t.identifier,
+        thermostatName: t.name,
+        utility: {
+          name: utility.name,
+          phone: utility.phone,
+          email: utility.email,
+          web: utility.web,
         },
-        { thermostat: t.name, utility },
-      );
+      });
     },
   );
 }

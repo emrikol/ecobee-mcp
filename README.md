@@ -2,7 +2,7 @@
 
 An MCP server for controlling [Ecobee](https://www.ecobee.com/) thermostats through clients that support MCP `2026-07-28`.
 
-Built with TypeScript, Express 5, and the official split v2 packages `@modelcontextprotocol/server` and `@modelcontextprotocol/node`.
+Built with TypeScript, Node's built-in HTTP and compression modules, and the official split v2 packages `@modelcontextprotocol/server` and `@modelcontextprotocol/node`. Those two MCP packages are the only direct production dependencies.
 
 Version 2 is forward-only: it uses `server/discover`, advertises only MCP `2026-07-28`, and rejects the legacy `initialize` handshake. The HTTP endpoint remains `/mcp`.
 
@@ -56,7 +56,7 @@ delivery is ambiguous.
 - Plugin system for custom credential providers and extra tools
 - 60-second read cache with in-flight request deduplication
 - Bounded deadlines, concurrency, rate-limit retries, and response sizes
-- Selective compression for large discovery and read responses
+- Selective built-in gzip compression for large discovery and read responses
 - Development-only CPU, allocation, trace-event, and flamegraph tooling
 
 ## Ecobee API Access

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -11,13 +11,13 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const outputSchema = z.object({
-  thermostats: z
+const outputSchema = s.object({
+  thermostats: s
     .array(
-      z.object({
+      s.object({
         id: boundedString(64),
         name: boundedString(128),
-        connected: z.boolean(),
+        connected: s.boolean(),
         model: boundedString(128),
       }),
     )
@@ -56,7 +56,7 @@ export function registerListThermostats(
         model: t.modelNumber,
       }));
 
-      return structuredResult(outputSchema, { thermostats: result }, result);
+      return structuredResult(outputSchema, { thermostats: result });
     },
   );
 }

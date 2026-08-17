@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -14,7 +14,7 @@ import {
   temperatureSchema,
 } from "./contracts.js";
 
-const inputSchema = z
+const inputSchema = s
   .object({
     thermostatId: optionalThermostatIdSchema,
     climateRef: boundedString(64).min(1),
@@ -27,21 +27,21 @@ const inputSchema = z
     { message: "At least one temperature is required." },
   );
 
-const profileStateSchema = z.object({
+const profileStateSchema = s.object({
   climateRef: boundedString(64),
   heatTemp: temperatureSchema,
   coolTemp: temperatureSchema,
 });
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
-  requestedChange: z.object({
+  requestedChange: s.object({
     climateRef: boundedString(64),
     heatTemp: temperatureSchema.optional(),
     coolTemp: temperatureSchema.optional(),
   }),
   previousState: profileStateSchema,
-  resultingState: z.object({
+  resultingState: s.object({
     profile: profileStateSchema.nullable(),
     verification: mutationVerificationSchema,
   }),

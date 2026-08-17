@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -14,7 +14,7 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const alertSchema = z.object({
+const alertSchema = s.object({
   acknowledgeRef: boundedString(128),
   date: boundedString(10),
   time: boundedString(8),
@@ -25,28 +25,28 @@ const alertSchema = z.object({
   acknowledgement: boundedString(32),
 });
 
-const readOutputSchema = z.object({
+const readOutputSchema = s.object({
   thermostatId: boundedString(64).nullable(),
-  alerts: z.array(alertSchema).max(MAX_EVENTS),
+  alerts: s.array(alertSchema).max(MAX_EVENTS),
 });
 
-const acknowledgeInputSchema = z.object({
+const acknowledgeInputSchema = s.object({
   thermostatId: optionalThermostatIdSchema,
   acknowledgeRef: boundedString(128).describe(
     "The acknowledgeRef from the alert to acknowledge",
   ),
-  ackType: z
+  ackType: s
     .enum(["accept", "decline", "defer", "unacknowledged"])
     .describe("How to respond to the alert"),
 });
 
-const mutationOutputSchema = z.object({
+const mutationOutputSchema = s.object({
   thermostatId: boundedString(64),
-  requestedChange: z.object({
+  requestedChange: s.object({
     acknowledgeRef: boundedString(128),
-    ackType: z.enum(["accept", "decline", "defer", "unacknowledged"]),
+    ackType: s.enum(["accept", "decline", "defer", "unacknowledged"]),
   }),
-  resultingState: z.object({ delivery: z.literal("accepted") }),
+  resultingState: s.object({ delivery: s.literal("accepted") }),
 });
 
 export function registerGetAlerts(
@@ -106,7 +106,7 @@ export function registerGetAlerts(
           thermostatId: thermostats[0].identifier,
           alerts: result,
         },
-        result.length > 0 ? result : "No active alerts.",
+        result.length === 0 ? "No active alerts." : undefined,
       );
     },
   );

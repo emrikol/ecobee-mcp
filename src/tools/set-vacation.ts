@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/server";
-import { z } from "zod";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
 import { fromEcobeeTemp, toEcobeeTemp } from "../ecobee/types.js";
+import { type Infer, schema as s } from "../schema.js";
 import {
   boundedString,
   dateSchema,
@@ -17,7 +17,7 @@ import {
 } from "./contracts.js";
 import { resolveId } from "./set-temperature.js";
 
-const vacationInputSchema = z.strictObject({
+const vacationInputSchema = s.strictObject({
   name: boundedString(12).min(1).optional(),
   coolTemp: temperatureSchema.optional(),
   heatTemp: temperatureSchema.optional(),
@@ -27,9 +27,9 @@ const vacationInputSchema = z.strictObject({
   endTime: timeSchema.default("00:00:00"),
 });
 
-const inputSchema = z
+const inputSchema = s
   .object({
-    action: z.enum(["create", "delete"]),
+    action: s.enum(["create", "delete"]),
     thermostatId: optionalThermostatIdSchema,
     name: boundedString(12).min(1).optional(),
     coolTemp: temperatureSchema.optional(),
@@ -38,9 +38,9 @@ const inputSchema = z
     startTime: timeSchema.default("00:00:00"),
     endDate: dateSchema.optional(),
     endTime: timeSchema.default("00:00:00"),
-    vacations: z.array(vacationInputSchema).min(1).max(32).optional(),
+    vacations: s.array(vacationInputSchema).min(1).max(32).optional(),
     vacationName: boundedString(12).min(1).optional(),
-    dryRun: z.boolean().default(false),
+    dryRun: s.boolean().default(false),
   })
   .superRefine((value, ctx) => {
     if (value.action === "delete" && !value.vacationName) {
@@ -63,7 +63,7 @@ const inputSchema = z
     }
   });
 
-const normalizedVacationSchema = z.object({
+const normalizedVacationSchema = s.object({
   name: boundedString(12),
   coolTemp: temperatureSchema,
   heatTemp: temperatureSchema,
@@ -74,25 +74,25 @@ const normalizedVacationSchema = z.object({
 });
 
 const vacationStateSchema = normalizedVacationSchema.extend({
-  running: z.boolean(),
+  running: s.boolean(),
 });
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
-  requestedChange: z.object({
-    action: z.enum(["create", "delete"]),
-    dryRun: z.boolean(),
+  requestedChange: s.object({
+    action: s.enum(["create", "delete"]),
+    dryRun: s.boolean(),
     vacationName: boundedString(12).optional(),
-    vacations: z.array(normalizedVacationSchema).max(32),
+    vacations: s.array(normalizedVacationSchema).max(32),
   }),
-  resultingState: z.object({
-    vacations: z.array(vacationStateSchema).max(MAX_EVENTS).nullable(),
-    verification: z.union([z.literal("preview"), mutationVerificationSchema]),
+  resultingState: s.object({
+    vacations: s.array(vacationStateSchema).max(MAX_EVENTS).nullable(),
+    verification: s.union([s.literal("preview"), mutationVerificationSchema]),
   }),
 });
 
-type VacationInput = z.output<typeof vacationInputSchema>;
-type NormalizedVacation = z.output<typeof normalizedVacationSchema>;
+type VacationInput = Infer<typeof vacationInputSchema>;
+type NormalizedVacation = Infer<typeof normalizedVacationSchema>;
 
 export function registerSetVacation(
   server: McpServer,
@@ -128,7 +128,7 @@ export function registerSetVacation(
 
 async function createVacations(
   thermostatId: string,
-  args: z.output<typeof inputSchema>,
+  args: Infer<typeof inputSchema>,
   api: EcobeeApiClient,
   cache: EcobeeCache,
 ) {
@@ -166,29 +166,17 @@ async function createVacations(
   });
 
   if (args.dryRun) {
-    return structuredResult(
-      outputSchema,
-      {
-        thermostatId,
-        requestedChange: { action: "create", dryRun: true, vacations },
-        resultingState: {
-          vacations: vacations.map((vacation) => ({
-            ...vacation,
-            running: false,
-          })),
-          verification: "preview",
-        },
-      },
-      {
-        dryRun: true,
-        defaults: { heatTemp: defaultHeat, coolTemp: defaultCool },
+    return structuredResult(outputSchema, {
+      thermostatId,
+      requestedChange: { action: "create", dryRun: true, vacations },
+      resultingState: {
         vacations: vacations.map((vacation) => ({
           ...vacation,
-          coolTempEcobee: toEcobeeTemp(vacation.coolTemp),
-          heatTempEcobee: toEcobeeTemp(vacation.heatTemp),
+          running: false,
         })),
+        verification: "preview",
       },
-    );
+    });
   }
 
   const payload = vacations.map((vacation) => ({
@@ -296,7 +284,7 @@ async function deleteVacation(
 async function readVacations(
   api: EcobeeApiClient,
   thermostatId: string,
-): Promise<Array<z.output<typeof vacationStateSchema>>> {
+): Promise<Array<Infer<typeof vacationStateSchema>>> {
   const thermostats = await api.getThermostats({
     selectionType: "thermostats",
     selectionMatch: thermostatId,

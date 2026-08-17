@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -13,9 +13,9 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const vacationSchema = z.object({
+const vacationSchema = s.object({
   name: boundedString(64),
-  running: z.boolean(),
+  running: s.boolean(),
   startDate: boundedString(10),
   startTime: boundedString(8),
   endDate: boundedString(10),
@@ -25,9 +25,9 @@ const vacationSchema = z.object({
   fan: boundedString(32),
 });
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64).nullable(),
-  vacations: z.array(vacationSchema).max(MAX_EVENTS),
+  vacations: s.array(vacationSchema).max(MAX_EVENTS),
 });
 
 export function registerListVacations(
@@ -92,7 +92,7 @@ export function registerListVacations(
           thermostatId: thermostats[0].identifier,
           vacations,
         },
-        vacations.length > 0 ? vacations : "No vacation events scheduled.",
+        vacations.length === 0 ? "No vacation events scheduled." : undefined,
       );
     },
   );

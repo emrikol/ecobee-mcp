@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -16,13 +16,13 @@ import {
   thermostatControlStateSchema,
 } from "./contracts.js";
 
-const inputSchema = z
+const inputSchema = s
   .object({
     thermostatId: optionalThermostatIdSchema,
     climateRef: boundedString(64).min(1).optional(),
     heatTemp: temperatureSchema.optional(),
     coolTemp: temperatureSchema.optional(),
-    holdType: z
+    holdType: s
       .enum(["nextTransition", "indefinite"])
       .default("nextTransition"),
   })
@@ -34,15 +34,15 @@ const inputSchema = z
     { message: "A climateRef or temperature is required." },
   );
 
-const outputSchema = z.object({
-  thermostatId: z.string().min(1).max(64),
-  requestedChange: z.object({
+const outputSchema = s.object({
+  thermostatId: s.string().min(1).max(64),
+  requestedChange: s.object({
     climateRef: boundedString(64).optional(),
     heatTemp: temperatureSchema.optional(),
     coolTemp: temperatureSchema.optional(),
-    holdType: z.enum(["nextTransition", "indefinite"]),
+    holdType: s.enum(["nextTransition", "indefinite"]),
   }),
-  resultingState: z.object({
+  resultingState: s.object({
     thermostat: thermostatControlStateSchema.nullable(),
     verification: mutationVerificationSchema,
   }),

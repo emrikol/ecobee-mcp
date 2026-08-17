@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -14,7 +14,7 @@ import {
   toolError,
 } from "./contracts.js";
 
-const equipmentSchema = z.object({
+const equipmentSchema = s.object({
   heatPump1: finiteNumber,
   heatPump2: finiteNumber,
   auxHeat1: finiteNumber,
@@ -27,13 +27,13 @@ const equipmentSchema = z.object({
   dehumidifier: finiteNumber,
 });
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
   thermostatName: boundedString(128),
   lastReading: boundedString(32).nullable(),
-  readings: z
+  readings: s
     .array(
-      z.object({
+      s.object({
         time: boundedString(64),
         actualTemp: finiteNumber,
         actualHumidity: finiteNumber,
@@ -119,20 +119,12 @@ export function registerGetExtendedRuntime(
         };
       });
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: t.identifier,
-          thermostatName: t.name,
-          lastReading: ext.lastReadingTimestamp,
-          readings,
-        },
-        {
-          thermostat: t.name,
-          lastReading: ext.lastReadingTimestamp,
-          readings,
-        },
-      );
+      return structuredResult(outputSchema, {
+        thermostatId: t.identifier,
+        thermostatName: t.name,
+        lastReading: ext.lastReadingTimestamp,
+        readings,
+      });
     },
   );
 }

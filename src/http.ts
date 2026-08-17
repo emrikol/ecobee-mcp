@@ -1,14 +1,15 @@
 import { timingSafeEqual } from "node:crypto";
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type OutgoingHttpHeaders,
+  type Server,
+  type ServerResponse,
+} from "node:http";
+import { createGzip, type Gzip } from "node:zlib";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import compression from "compression";
-import express from "express";
-import type {
-  ErrorRequestHandler,
-  NextFunction,
-  Request,
-  Response,
-} from "express";
 import { MCP_PROTOCOL_VERSION, SERVICE_VERSION } from "./constants.js";
 import type { EcobeeApiClient } from "./ecobee/api.js";
 import type { EcobeeCache } from "./ecobee/cache.js";
@@ -34,8 +35,17 @@ export interface HttpServiceOptions {
   authToken?: string;
 }
 
+export interface NodeHttpApplication {
+  (request: IncomingMessage, response: ServerResponse): void;
+  listen(
+    port: number,
+    hostname?: string,
+    listeningListener?: () => void,
+  ): Server;
+}
+
 export interface EcobeeHttpService {
-  app: express.Express;
+  app: NodeHttpApplication;
   close: () => Promise<void>;
 }
 
@@ -45,83 +55,207 @@ export function createHttpService(
   const plugins = options.plugins ?? [];
   const mcp = createMcpHandler(
     () => createMcpServer(options.api, options.cache, plugins),
-    {
-      legacy: "reject",
-      responseMode: "auto",
-      onerror: () => console.error("[mcp] Request rejected"),
-    },
+    { legacy: "reject", responseMode: "auto" },
   );
-  const handleMcp = toNodeHandler(mcp, {
-    onerror: () => console.error("[mcp] HTTP adapter failed"),
-  });
+  const handleMcp = toNodeHandler(mcp);
 
-  const app = express();
-  app.disable("x-powered-by");
-  app.use(
-    express.json({
-      limit: MAX_MCP_REQUEST_BYTES,
-      strict: true,
-      type: ["application/json", "application/*+json"],
-    }),
-  );
-  const compressLargeMcpResponse = compression({
-    level: 4,
-    threshold: 1_024,
-    filter: (req, res) => {
-      const contentType = res.getHeader("content-type");
-      if (
-        typeof contentType === "string" &&
-        contentType.startsWith("text/event-stream")
-      ) {
-        return false;
+  const requestListener = (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): void => {
+    void routeRequest(request, response).catch(() => {
+      if (!response.headersSent) {
+        sendJson(response, 500, { error: "Malformed request" });
+      } else if (!response.writableEnded) {
+        response.end();
       }
-      return compression.filter(req, res);
-    },
-  });
-  app.use("/mcp", (req: Request, res: Response, next: NextFunction) => {
-    if (shouldCompressMcpResponse(req.body)) {
-      compressLargeMcpResponse(req, res, next);
-      return;
-    }
-    next();
-  });
-
-  app.all("/mcp", (req: Request, res: Response, next: NextFunction) => {
-    if (
-      options.authToken &&
-      !matchesBearerToken(req.headers.authorization, options.authToken)
-    ) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-
-    void handleMcp(req, res, req.body).catch(next);
-  });
-
-  app.get("/health", (_req: Request, res: Response) => {
-    res.json({
-      status: "ok",
-      serviceVersion: SERVICE_VERSION,
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      authentication: options.authToken ? "bearer-required" : "disabled",
-    });
-  });
-
-  const jsonErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
-    const status =
-      typeof error === "object" &&
-      error !== null &&
-      "status" in error &&
-      typeof error.status === "number"
-        ? error.status
-        : 500;
-    res.status(status >= 400 && status < 600 ? status : 500).json({
-      error: status === 413 ? "Request body too large" : "Malformed request",
     });
   };
-  app.use(jsonErrorHandler);
+
+  async function routeRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/health" && request.method === "GET") {
+      sendJson(response, 200, {
+        status: "ok",
+        serviceVersion: SERVICE_VERSION,
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        authentication: options.authToken ? "bearer-required" : "disabled",
+      });
+      return;
+    }
+
+    if (pathname !== "/mcp") {
+      sendJson(response, 404, { error: "Not found" });
+      return;
+    }
+
+    if (
+      options.authToken &&
+      !matchesBearerToken(request.headers.authorization, options.authToken)
+    ) {
+      sendJson(response, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    let body: unknown;
+    if (request.method === "POST") {
+      try {
+        body = await readJsonBody(request);
+      } catch (error) {
+        sendJson(response, error instanceof BodyTooLargeError ? 413 : 400, {
+          error:
+            error instanceof BodyTooLargeError
+              ? "Request body too large"
+              : "Malformed request",
+        });
+        return;
+      }
+    }
+
+    const targetResponse =
+      shouldCompressMcpResponse(body) && acceptsGzip(request.headers)
+        ? new GzipResponse(response)
+        : response;
+    await handleMcp(request, targetResponse, body);
+  }
+
+  const app = Object.assign(requestListener, {
+    listen(
+      port: number,
+      hostname?: string,
+      listeningListener?: () => void,
+    ): Server {
+      return createServer(requestListener).listen(
+        port,
+        hostname,
+        listeningListener,
+      );
+    },
+  });
 
   return { app, close: mcp.close };
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  if (!isJsonContentType(request.headers["content-type"])) {
+    throw new Error("Unsupported content type.");
+  }
+  const declaredLength = Number(request.headers["content-length"]);
+  if (
+    Number.isFinite(declaredLength) &&
+    declaredLength > MAX_MCP_REQUEST_BYTES
+  ) {
+    request.resume();
+    throw new BodyTooLargeError();
+  }
+
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > MAX_MCP_REQUEST_BYTES) {
+      request.resume();
+      throw new BodyTooLargeError();
+    }
+    chunks.push(buffer);
+  }
+  if (bytes === 0) throw new Error("Empty JSON body.");
+
+  const parsed: unknown = JSON.parse(Buffer.concat(chunks, bytes).toString());
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("JSON body must be an object or array.");
+  }
+  return parsed;
+}
+
+class BodyTooLargeError extends Error {}
+
+/** Minimal response facade that adds gzip to bounded, non-streaming MCP reads.
+ * The SDK still owns response creation and stream-close cancellation. */
+class GzipResponse {
+  private readonly gzip: Gzip;
+
+  constructor(private readonly response: ServerResponse) {
+    this.gzip = createGzip({ level: 4 });
+    this.gzip.pipe(response);
+    this.gzip.on("error", () => response.destroy());
+  }
+
+  get destroyed(): boolean {
+    return this.response.destroyed;
+  }
+
+  on(event: string, listener: (...args: unknown[]) => void): this {
+    if (event === "drain") {
+      this.gzip.on(event, listener);
+    } else {
+      this.response.on(event, listener);
+    }
+    return this;
+  }
+
+  writeHead(status: number, headers: Record<string, string>): this {
+    const compressedHeaders: OutgoingHttpHeaders = { ...headers };
+    delete compressedHeaders["content-length"];
+    compressedHeaders["content-encoding"] = "gzip";
+    const vary = compressedHeaders.vary;
+    compressedHeaders.vary = vary
+      ? `${String(vary)}, Accept-Encoding`
+      : "Accept-Encoding";
+    this.response.writeHead(status, compressedHeaders);
+    return this;
+  }
+
+  write(chunk: Uint8Array): boolean {
+    return this.gzip.write(chunk);
+  }
+
+  end(): this {
+    this.gzip.end();
+    return this;
+  }
+}
+
+function sendJson(
+  response: ServerResponse,
+  status: number,
+  value: Record<string, unknown>,
+): void {
+  const body = JSON.stringify(value);
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+  });
+  response.end(body);
+}
+
+function isJsonContentType(value: string | undefined): boolean {
+  if (!value) return false;
+  const mediaType = value.split(";", 1)[0].trim().toLowerCase();
+  return mediaType === "application/json" || mediaType.endsWith("+json");
+}
+
+function acceptsGzip(headers: IncomingHttpHeaders): boolean {
+  const value = headers["accept-encoding"];
+  if (!value) return false;
+  const encodings = value
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .map((part) => {
+      const [name, ...parameters] = part.split(";").map((item) => item.trim());
+      const quality = parameters
+        .find((parameter) => parameter.startsWith("q="))
+        ?.slice(2);
+      return { name, quality: quality === undefined ? 1 : Number(quality) };
+    });
+  const gzip = encodings.find(({ name }) => name === "gzip");
+  if (gzip) return gzip.quality > 0;
+  return (encodings.find(({ name }) => name === "*")?.quality ?? 0) > 0;
 }
 
 function shouldCompressMcpResponse(body: unknown): boolean {

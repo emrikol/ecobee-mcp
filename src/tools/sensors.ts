@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,18 +12,18 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64).nullable(),
-  sensors: z
+  sensors: s
     .array(
-      z.object({
+      s.object({
         id: boundedString(64),
         name: boundedString(128),
         type: boundedString(64),
-        inUse: z.boolean(),
+        inUse: s.boolean(),
         temperature: finiteNumber.optional(),
         humidity: finiteNumber.optional(),
-        occupancy: z.boolean().optional(),
+        occupancy: s.boolean().optional(),
       }),
     )
     .max(MAX_SENSORS),
@@ -90,14 +90,10 @@ export function registerGetSensors(
         };
       });
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: thermostats[0].identifier,
-          sensors: result,
-        },
-        result,
-      );
+      return structuredResult(outputSchema, {
+        thermostatId: thermostats[0].identifier,
+        sensors: result,
+      });
     },
   );
 }

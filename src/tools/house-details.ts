@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -17,7 +17,7 @@ import {
   toolError,
 } from "./contracts.js";
 
-const houseDetailsSchema = z.object({
+const houseDetailsSchema = s.object({
   style: boundedString(64),
   size: finiteNumber,
   numberOfFloors: finiteNumber,
@@ -27,56 +27,56 @@ const houseDetailsSchema = z.object({
   windowEfficiency: finiteNumber,
 });
 
-const readOutputSchema = z.object({
+const readOutputSchema = s.object({
   thermostatId: boundedString(64),
   thermostatName: boundedString(128),
   houseDetails: houseDetailsSchema.nullable(),
 });
 
 const updateFieldsSchema = houseDetailsSchema.partial();
-const updateInputSchema = z.object({
+const updateInputSchema = s.object({
   thermostatId: optionalThermostatIdSchema,
   style: boundedString(64)
     .optional()
     .describe(
       "House style: other, apartment, condominium, detached, loft, multiPlex, rowHouse, semiDetached, townhouse",
     ),
-  size: z
+  size: s
     .number()
     .int()
     .min(0)
     .max(100_000)
     .optional()
     .describe("House size in square feet"),
-  numberOfFloors: z
+  numberOfFloors: s
     .number()
     .int()
     .min(0)
     .max(100)
     .optional()
     .describe("Number of floors"),
-  numberOfRooms: z
+  numberOfRooms: s
     .number()
     .int()
     .min(0)
     .max(1_000)
     .optional()
     .describe("Number of rooms"),
-  numberOfOccupants: z
+  numberOfOccupants: s
     .number()
     .int()
     .min(0)
     .max(1_000)
     .optional()
     .describe("Number of occupants"),
-  age: z
+  age: s
     .number()
     .int()
     .min(0)
     .max(1_000)
     .optional()
     .describe("Age of house in years"),
-  windowEfficiency: z
+  windowEfficiency: s
     .number()
     .int()
     .min(1)
@@ -84,10 +84,10 @@ const updateInputSchema = z.object({
     .optional()
     .describe("Window efficiency, 1-7"),
 });
-const mutationOutputSchema = z.object({
+const mutationOutputSchema = s.object({
   thermostatId: boundedString(64),
   requestedChange: updateFieldsSchema,
-  resultingState: z.object({
+  resultingState: s.object({
     houseDetails: houseDetailsSchema.nullable(),
     verification: mutationVerificationSchema,
   }),
@@ -137,23 +137,19 @@ export function registerGetHouseDetails(
         );
       }
 
-      return structuredResult(
-        readOutputSchema,
-        {
-          thermostatId: t.identifier,
-          thermostatName: t.name,
-          houseDetails: {
-            style: details.style,
-            size: details.size,
-            numberOfFloors: details.numberOfFloors,
-            numberOfRooms: details.numberOfRooms,
-            numberOfOccupants: details.numberOfOccupants,
-            age: details.age,
-            windowEfficiency: details.windowEfficiency,
-          },
+      return structuredResult(readOutputSchema, {
+        thermostatId: t.identifier,
+        thermostatName: t.name,
+        houseDetails: {
+          style: details.style,
+          size: details.size,
+          numberOfFloors: details.numberOfFloors,
+          numberOfRooms: details.numberOfRooms,
+          numberOfOccupants: details.numberOfOccupants,
+          age: details.age,
+          windowEfficiency: details.windowEfficiency,
         },
-        { thermostat: t.name, houseDetails: details },
-      );
+      });
     },
   );
 }

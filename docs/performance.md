@@ -44,15 +44,40 @@ and its sampled allocation fell from 63.2 to 33.3 MiB, after eliminating the
 discarded duplicate text serialization. Total-profile timing for that run was
 not used because concurrent system load and garbage collection made it noisy.
 
+### 2.2.0 application-path cleanup
+
+Version 2.2.0 removes the remaining non-MCP production packages and the
+duplicate schema/serialization work they caused. These measurements compare
+the same unprofiled loopback workload immediately before and after the change:
+
+| Scenario                      | 2.1.1 req/s | 2.2.0 req/s | Change | 2.1.1 p50 | 2.2.0 p50 |
+| ----------------------------- | ----------: | ----------: | -----: | --------: | --------: |
+| Tool discovery                |       690.3 |       781.5 | +13.2% |   1.40 ms |   1.24 ms |
+| Cached thermostat status      |     1,770.7 |     2,019.9 | +14.1% |   0.50 ms |   0.43 ms |
+| Cached status, concurrent     |     2,225.6 |     2,687.9 | +20.8% |   6.87 ms |   5.64 ms |
+| Full-day unsummarized runtime |       210.0 |       291.5 | +38.8% |   4.75 ms |   3.44 ms |
+| 512 KiB chunked transport     |       983.1 |     1,034.7 |  +5.3% |   0.98 ms |   0.95 ms |
+
+The production dependency list now contains only the official MCP server and
+Node adapter packages. The transport uses `node:http`; selective gzip uses
+`node:zlib`; and direct bounded JSON Schemas use the SDK's own validator. The
+canonical discovery schemas and their pinned digest are unchanged.
+
+The final sampled profile fell from 3.116 to 2.631 CPU seconds, a 15.6%
+reduction. The prior Zod output parse accounted for 154.9 sampled milliseconds
+and 365.4 MiB of sampled allocation; that frame is absent from application
+code in the final profile. Avoiding `Object.entries()` inside the exact byte
+counter also removed 117 MiB of transient sampled allocation from an interim
+implementation.
+
 ## Wire size
 
-Large JSON responses use normal HTTP content negotiation for Brotli, gzip, or
-deflate. Small tool reads and event streams bypass compression. The table below
-records the harness's gzip path.
+Large JSON responses use HTTP gzip negotiation implemented with Node's built-in
+zlib module. Small tool reads and event streams bypass compression.
 
 | Response                   | Decoded bytes | Wire bytes | Reduction | Encoding |
 | -------------------------- | ------------: | ---------: | --------: | -------- |
-| `tools/list`               |        47,866 |      5,358 |     88.8% | gzip     |
+| `tools/list`               |        47,866 |      5,355 |     88.8% | gzip     |
 | Cached thermostat status   |           560 |        560 |         0 | identity |
 | Full-day runtime intervals |       119,915 |     11,617 |     90.3% | gzip     |
 
@@ -64,23 +89,28 @@ a short text pointer. This also reduced the representative status response by
 
 ## Profile findings and fixes
 
-The baseline flamegraph attributed about 30% of sampled self CPU to repeated
-Zod JSON Schema conversion. The v2 HTTP adapter intentionally creates a fresh
-MCP server for each request, but the 24 built-in tool schema objects are
-immutable and shared. Version 2.1.0 therefore caches:
+The original baseline flamegraph attributed about 30% of sampled self CPU to
+repeated Zod JSON Schema conversion. Version 2.1 cached that conversion.
+Version 2.2 removes the second schema implementation entirely: immutable JSON
+Schemas are compiled once through the official SDK, SDK-validated inputs are
+not validated again, and locally validated outputs are not immediately
+revalidated by the SDK.
 
-- strict input-schema wrappers;
-- Standard Schema JSON conversion by schema, direction, and target;
-- the fact that an object has already passed SDK input validation; and
-- the fact that an output object has already passed local validation.
+The 2.1.1 follow-up profile identified three remaining application-owned
+costs: Zod output parsing and cloning, a full `JSON.stringify` used only to
+measure response size, and per-row CSV `split()` arrays in runtime reports.
+Version 2.2 removes all three. The response limiter now walks JSON-safe values
+without allocating a second serialized payload, and a deterministic generated
+domain test compares its byte count against `JSON.stringify`. Runtime rows are
+materialized directly into the required output objects.
 
-External or replacement results still take the SDK validation path. Discovery
-schemas and their digest are unchanged.
-
-The remaining top application costs are structured-result validation,
-serialization, and the large runtime fixture. Resources use compact JSON.
-Large likely responses use a balanced compression level; small,
-latency-sensitive reads avoid compression setup.
+The remaining large allocations in the runtime benchmark are the interval
+objects and strings that constitute the requested result itself. SDK schema
+validation, per-request server registration, JSON-RPC serialization, HTTP
+buffers, and gzip are also visible in profiles; they are required protocol or
+output work rather than removable duplicate application work. Large likely
+responses use gzip level 4; small, latency-sensitive reads avoid compression
+setup.
 
 ## Reproduce
 

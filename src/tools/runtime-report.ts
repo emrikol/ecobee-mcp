@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -49,22 +49,22 @@ const ALL_PRESETS: Record<string, string[]> = {
   ],
 };
 
-const inputSchema = z
+const inputSchema = s
   .object({
     thermostatId: optionalThermostatIdSchema,
     startDate: dateSchema.describe("Start date in YYYY-MM-DD format"),
     endDate: dateSchema.describe("End date in YYYY-MM-DD format"),
-    preset: z
+    preset: s
       .enum(["equipment", "environment", "all"])
       .optional()
       .describe('Column preset. Use this OR columns, not both. Default: "all"'),
-    columns: z
+    columns: s
       .array(boundedString(64).min(1))
       .min(1)
       .max(32)
       .optional()
       .describe("Custom Ecobee runtime columns. Overrides preset."),
-    summarize: z.boolean().default(true),
+    summarize: s.boolean().default(true),
   })
   .refine(
     ({ startDate, endDate }) => {
@@ -79,22 +79,22 @@ const inputSchema = z
     },
   );
 
-const numericColumnsSchema = z
+const numericColumnsSchema = s
   .record(boundedString(64), finiteNumber)
   .meta({ maxProperties: 32 });
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64),
   startDate: dateSchema,
   endDate: dateSchema,
-  mode: z.enum(["summary", "intervals"]),
-  dailySummaries: z
+  mode: s.enum(["summary", "intervals"]),
+  dailySummaries: s
     .record(dateSchema, numericColumnsSchema)
     .meta({ maxProperties: 31 })
     .optional(),
-  intervalCount: z.number().int().min(0).max(MAX_RUNTIME_ROWS).optional(),
-  data: z
+  intervalCount: s.number().int().min(0).max(MAX_RUNTIME_ROWS).optional(),
+  data: s
     .array(
-      z
+      s
         .record(boundedString(64), boundedString(512))
         .meta({ maxProperties: 34 }),
     )
@@ -164,50 +164,34 @@ export function registerGetRuntimeReport(
           thermostatReport.rowList,
           columnNames,
         );
-        return structuredResult(
-          outputSchema,
-          {
-            thermostatId: id,
-            startDate,
-            endDate,
-            mode: "summary",
-            dailySummaries,
-          },
-          { thermostatId: id, startDate, endDate, dailySummaries },
-        );
+        return structuredResult(outputSchema, {
+          thermostatId: id,
+          startDate,
+          endDate,
+          mode: "summary",
+          dailySummaries,
+        });
       }
 
       // Raw intervals
-      const rows = thermostatReport.rowList.map((row) => {
-        const values = row.split(",");
-        const obj: Record<string, string> = {
-          date: values[0],
-          time: values[1],
-        };
-        for (let i = 2; i < values.length; i++) {
-          obj[columnNames[i - 2]] = values[i];
-        }
-        return obj;
-      });
-
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: id,
-          startDate,
-          endDate,
-          mode: "intervals",
-          intervalCount: rows.length,
-          data: rows,
-        },
-        {
-          thermostatId: id,
-          startDate,
-          endDate,
-          intervals: rows.length,
-          data: rows,
-        },
+      const rows = new Array<Record<string, string>>(
+        thermostatReport.rowList.length,
       );
+      for (let index = 0; index < thermostatReport.rowList.length; index++) {
+        rows[index] = parseRuntimeRow(
+          thermostatReport.rowList[index],
+          columnNames,
+        );
+      }
+
+      return structuredResult(outputSchema, {
+        thermostatId: id,
+        startDate,
+        endDate,
+        mode: "intervals",
+        intervalCount: rows.length,
+        data: rows,
+      });
     },
   );
 }
@@ -222,25 +206,24 @@ function summarizeByDay(
   > = {};
 
   for (const row of rowList) {
-    const values = row.split(",");
-    const date = values[0];
+    const firstComma = row.indexOf(",");
+    if (firstComma < 0) continue;
+    const date = row.slice(0, firstComma);
     if (!date) continue;
 
     if (!days[date]) {
       days[date] = { sums: {}, counts: {} };
     }
 
-    for (let i = 2; i < values.length; i++) {
-      const col = columnNames[i - 2];
-      const val = values[i];
-      if (val === "" || val === undefined) continue;
-
-      const num = Number(val);
-      if (isNaN(num)) continue;
-
-      days[date].sums[col] = (days[date].sums[col] ?? 0) + num;
-      days[date].counts[col] = (days[date].counts[col] ?? 0) + 1;
-    }
+    forEachRuntimeValue(row, firstComma, (columnIndex, value) => {
+      if (value === "") return;
+      const column = columnNames[columnIndex];
+      if (column === undefined) return;
+      const number = Number(value);
+      if (Number.isNaN(number)) return;
+      days[date].sums[column] = (days[date].sums[column] ?? 0) + number;
+      days[date].counts[column] = (days[date].counts[column] ?? 0) + 1;
+    });
   }
 
   const result: Record<string, Record<string, number>> = {};
@@ -262,4 +245,45 @@ function summarizeByDay(
   }
 
   return result;
+}
+
+function parseRuntimeRow(
+  row: string,
+  columnNames: string[],
+): Record<string, string> {
+  const firstComma = row.indexOf(",");
+  const secondComma = firstComma < 0 ? -1 : row.indexOf(",", firstComma + 1);
+  const result: Record<string, string> = {
+    date: firstComma < 0 ? row : row.slice(0, firstComma),
+    time:
+      secondComma < 0
+        ? firstComma < 0
+          ? ""
+          : row.slice(firstComma + 1)
+        : row.slice(firstComma + 1, secondComma),
+  };
+  if (secondComma < 0) return result;
+
+  forEachRuntimeValue(row, firstComma, (columnIndex, value) => {
+    const column = columnNames[columnIndex];
+    if (column !== undefined) result[column] = value;
+  });
+  return result;
+}
+
+function forEachRuntimeValue(
+  row: string,
+  firstComma: number,
+  visit: (columnIndex: number, value: string) => void,
+): void {
+  const secondComma = row.indexOf(",", firstComma + 1);
+  if (secondComma < 0) return;
+  let start = secondComma + 1;
+  let columnIndex = 0;
+  for (let index = start; index <= row.length; index++) {
+    if (index === row.length || row.charCodeAt(index) === 44) {
+      visit(columnIndex++, row.slice(start, index));
+      start = index + 1;
+    }
+  }
 }

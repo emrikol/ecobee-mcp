@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -12,15 +12,15 @@ import {
   structuredResult,
 } from "./contracts.js";
 
-const outputSchema = z.object({
+const outputSchema = s.object({
   thermostatId: boundedString(64).nullable(),
-  weather: z
+  weather: s
     .object({
       station: boundedString(128),
       timestamp: boundedString(32),
-      forecasts: z
+      forecasts: s
         .array(
-          z.object({
+          s.object({
             dateTime: boundedString(32),
             condition: boundedString(128),
             temperature: finiteNumber,
@@ -103,14 +103,10 @@ export function registerGetWeather(
         })),
       };
 
-      return structuredResult(
-        outputSchema,
-        {
-          thermostatId: thermostats[0].identifier,
-          weather: result,
-        },
-        result,
-      );
+      return structuredResult(outputSchema, {
+        thermostatId: thermostats[0].identifier,
+        weather: result,
+      });
     },
   );
 }

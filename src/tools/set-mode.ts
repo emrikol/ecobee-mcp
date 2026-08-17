@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { schema as s } from "../schema.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EcobeeApiClient } from "../ecobee/api.js";
 import type { EcobeeCache } from "../ecobee/cache.js";
@@ -13,15 +13,15 @@ import {
   thermostatControlStateSchema,
 } from "./contracts.js";
 
-const modeSchema = z.enum(["heat", "cool", "auto", "off", "auxHeatOnly"]);
-const inputSchema = z.object({
+const modeSchema = s.enum(["heat", "cool", "auto", "off", "auxHeatOnly"]);
+const inputSchema = s.object({
   thermostatId: optionalThermostatIdSchema,
   mode: modeSchema.describe("The HVAC mode to set"),
 });
-const outputSchema = z.object({
-  thermostatId: z.string().min(1).max(64),
-  requestedChange: z.object({ mode: modeSchema }),
-  resultingState: z.object({
+const outputSchema = s.object({
+  thermostatId: s.string().min(1).max(64),
+  requestedChange: s.object({ mode: modeSchema }),
+  resultingState: s.object({
     thermostat: thermostatControlStateSchema.nullable(),
     verification: mutationVerificationSchema,
   }),
