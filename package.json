@@ -17,8 +17,8 @@
     "profile": "PERF_PROFILE_DIR=.artifacts/performance node --expose-gc --import tsx bench/benchmark.ts",
     "profile:analyze": "node --import tsx bench/analyze-profile.ts",
     "profile:trace": "PERF_PROFILE_DIR=.artifacts/performance PERF_PROFILE_LABEL=runtime-trace node --trace-events-enabled --trace-event-categories=v8,node,node.async_hooks --trace-event-file-pattern='.artifacts/performance/node-trace-${pid}.json' --expose-gc --import tsx bench/benchmark.ts",
-    "format": "prettier --write src/ test/ bench/ docs/ README.md CHANGELOG.md package.json tsconfig*.json",
-    "format:check": "prettier --check src/ test/ bench/ docs/ README.md CHANGELOG.md package.json tsconfig*.json"
+    "format": "prettier --write src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md package.json tsconfig*.json",
+    "format:check": "prettier --check src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md package.json tsconfig*.json"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.0.0",

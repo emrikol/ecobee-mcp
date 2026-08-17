@@ -61,9 +61,13 @@ delivery is ambiguous.
 
 ## Ecobee API Access
 
-**Ecobee no longer issues new API keys.** The [developer portal](https://www.ecobee.com/developers/) is effectively closed — new registrations are not accepted.
+**Ecobee is not currently accepting new developer registrations.** See the
+[official Developer API page](https://www.ecobee.com/developers/). If you do
+not already have an Ecobee application key, you cannot create one through a
+new developer registration.
 
-If you have a **grandfathered API key** (registered before the portal closed), this server works directly with your credentials. If not, you have a couple of options:
+If you already have an **Ecobee application key**, this server works directly
+with your credentials. If not, you have a couple of options:
 
 1. **Piggyback on an existing integration.** If you already run an app that authenticates with the Ecobee API (e.g., a smart home platform), you can point ecobee-mcp at that app's credentials in `readonly` mode. ecobee-mcp will never refresh tokens itself — it just reads them and re-reads on 401 in case the other app has refreshed. See [Auth Modes](#auth-modes) below.
 
@@ -245,9 +249,16 @@ Ecobee API and never performs a thermostat mutation. Generated profiles live in
 the gitignored `.artifacts/performance/` directory.
 
 See [Performance](docs/performance.md) for methodology, before/after results,
-known costs, and profiling commands. See
+known costs, the measured Raspberry Pi memory footprint, and profiling
+commands. See
 [Development diagnostics](docs/observability.md) for local trace and profile
 artifacts. Production contains no telemetry instrumentation or exporter.
+
+The current Node deployment is an intentional choice, not an unfinished port.
+Its steady production footprint is approximately 98–100 MiB RSS on the 8 GiB
+Pi, which has ample available memory; V8 memory-saving flags caused material
+throughput regressions. [Future work](TODO.md) records the measured triggers,
+parity plan, and acceptance criteria for reconsidering a Rust implementation.
 
 ## Support Policy
 

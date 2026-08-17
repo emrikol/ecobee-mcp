@@ -70,6 +70,31 @@ code in the final profile. Avoiding `Object.entries()` inside the exact byte
 counter also removed 117 MiB of transient sampled allocation from an interim
 implementation.
 
+## Production memory baseline
+
+The deployed service is a bare-metal systemd process on an 8 GiB Raspberry Pi
+running Node 20. After normal discovery and read traffic, it holds approximately
+98–100 MiB RSS, including roughly 58–60 MiB of anonymous memory. RSS also
+counts clean file-backed pages that the kernel can reclaim, so it is not the
+same as memory uniquely unavailable to other processes.
+
+At measurement time, Ecobee MCP was the Pi's only Node process. The host had
+approximately 6.1 GiB available, no swap use, and no observed memory pressure.
+The service therefore has no current operational memory constraint.
+
+Controlled startup probes showed that V8's `--optimize-for-size` and a 1 MiB
+young-generation semi-space could lower RSS, but they slowed representative
+workloads by 9–76% and 19–69%, respectively. A 64 MiB old-generation limit
+provided no material savings. No V8 memory flag is deployed because each
+useful RSS reduction cost substantially more CPU and latency than it saved.
+
+The official MCP SDK, its schema registration, and the Node/V8 runtime account
+for most of the process baseline. The application-owned duplicate validation,
+serialization, and telemetry costs found in the profiles have already been
+removed. A Rust rewrite is therefore deferred until memory becomes an actual
+constraint; [the future-work plan](../TODO.md) defines the triggers and parity
+requirements.
+
 ## Wire size
 
 Large JSON responses use HTTP gzip negotiation implemented with Node's built-in
