@@ -2,7 +2,7 @@ import {
   fromJsonSchema,
   type JsonSchemaType,
   type StandardSchemaWithJSON,
-} from "@modelcontextprotocol/server";
+} from "@modelcontextprotocol/server/runtime";
 
 type JsonSchema = JsonSchemaType & Record<string, unknown>;
 type Refinement = (value: unknown, context: RefinementContext) => void;

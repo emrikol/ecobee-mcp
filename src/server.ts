@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/server";
+import { McpServer } from "@modelcontextprotocol/server/runtime";
 import {
   MCP_PROTOCOL_VERSION,
   SERVICE_NAME,
@@ -23,6 +23,7 @@ export function createMcpServer(
   api: EcobeeApiClient,
   cache: EcobeeCache,
   plugins: EcobeePlugin[] = [],
+  performanceCaches = true,
 ): McpServer {
   const server = new McpServer(
     {
@@ -31,6 +32,7 @@ export function createMcpServer(
     },
     {
       supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
+      performanceCaches,
       capabilities: {
         tools: { listChanged: false },
         resources: { listChanged: false },

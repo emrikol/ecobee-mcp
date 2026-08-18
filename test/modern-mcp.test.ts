@@ -195,6 +195,29 @@ describe("modern MCP HTTP endpoint", () => {
     });
   });
 
+  it("preserves discovery and reads with SDK performance caches disabled", async () => {
+    const harness = await startHarness(createFakeApi(), false);
+    const client = await connectModern(harness.endpoint);
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name).sort()).toEqual(EXPECTED_TOOLS);
+
+    const result = await client.callTool({
+      name: "list_thermostats",
+      arguments: {},
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      thermostats: [
+        {
+          id: "123",
+          name: "Main",
+          model: "ecobee-test",
+          connected: true,
+        },
+      ],
+    });
+  });
+
   it("discovers and reads the three bounded Ecobee resources", async () => {
     const harness = await startHarness();
     const client = await connectModern(harness.endpoint);
@@ -423,11 +446,15 @@ describe("modern MCP HTTP endpoint", () => {
   });
 });
 
-async function startHarness(api = createFakeApi()): Promise<Harness> {
+async function startHarness(
+  api = createFakeApi(),
+  performanceCaches = true,
+): Promise<Harness> {
   const service = createHttpService({
     api,
     cache: new EcobeeCache(),
     authToken: AUTH_TOKEN,
+    performanceCaches,
   });
   const httpServer = service.app.listen(0, "127.0.0.1");
   await once(httpServer, "listening");

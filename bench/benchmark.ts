@@ -40,12 +40,13 @@ interface JsonRpcResponse {
 const profileDir = process.env.PERF_PROFILE_DIR;
 const profileLabel = process.env.PERF_PROFILE_LABEL ?? "profile";
 const requestScale = boundedInteger(process.env.PERF_REQUEST_SCALE, 1, 1, 20);
+const performanceCaches = process.env.MCP_PERFORMANCE_CACHES !== "0";
 let requestId = 1;
 
 const api = createBenchmarkApi();
 const transportApi = createTransportBenchmarkApi();
 const cache = new EcobeeCache();
-const service = createHttpService({ api, cache });
+const service = createHttpService({ api, cache, performanceCaches });
 const listener = service.app.listen(0, "127.0.0.1");
 await once(listener, "listening");
 const address = listener.address();
@@ -175,6 +176,7 @@ const report = {
   node: process.version,
   platform: `${process.platform}-${process.arch}`,
   protocolVersion: MCP_PROTOCOL_VERSION,
+  performanceCaches,
   requestScale,
   processMemory: {
     afterWarmup: afterWarmupMemory,

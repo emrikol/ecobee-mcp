@@ -1,6 +1,6 @@
 {
   "name": "ecobee-mcp",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "MCP server for Ecobee thermostat control",
   "type": "module",
   "main": "dist/index.js",
@@ -21,9 +21,9 @@
     "format:check": "prettier --check src/ test/ bench/ docs/ README.md CHANGELOG.md TODO.md vendor/README.md package.json tsconfig*.json"
   },
   "dependencies": {
-    "@modelcontextprotocol/core": "file:vendor/modelcontextprotocol-core-2.0.0-mod-perf-346fdcc.tgz",
-    "@modelcontextprotocol/node": "file:vendor/modelcontextprotocol-node-2.0.0-mod-perf-346fdcc.tgz",
-    "@modelcontextprotocol/server": "file:vendor/modelcontextprotocol-server-2.0.0-mod-perf-346fdcc.tgz"
+    "@modelcontextprotocol/core": "file:vendor/modelcontextprotocol-core-2.0.0-mod-perf-b7608a8.tgz",
+    "@modelcontextprotocol/node": "file:vendor/modelcontextprotocol-node-2.0.0-mod-perf-b7608a8.tgz",
+    "@modelcontextprotocol/server": "file:vendor/modelcontextprotocol-server-2.0.0-mod-perf-b7608a8.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

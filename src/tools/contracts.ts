@@ -104,9 +104,7 @@ export const mutationVerificationSchema = s.enum([
 type AnyObjectSchema = ObjectSchema<Record<string, Schema<unknown>>>;
 
 const cachedInputValidators = new WeakSet<StandardSchemaWithJSON>();
-const cachedOutputValidators = new WeakSet<StandardSchemaWithJSON>();
 const sdkValidatedInputs = new WeakSet<object>();
-const locallyValidatedOutputs = new WeakSet<object>();
 
 interface EcobeeToolConfig<
   InputSchema extends AnyObjectSchema,
@@ -120,8 +118,8 @@ interface EcobeeToolConfig<
 
 /**
  * Registers a built-in Ecobee tool with request-scoped cancellation and a
- * fixed public error boundary. Locally parsed output is marked so the SDK does
- * not repeat the same validation immediately before serialization.
+ * fixed public error boundary. The SDK validates structured output exactly
+ * once against the registered output schema before serialization.
  */
 export function registerEcobeeTool<
   InputSchema extends AnyObjectSchema,
@@ -136,7 +134,6 @@ export function registerEcobeeTool<
   const sdkInputSchema = compileSchema(config.inputSchema);
   const sdkOutputSchema = compileSchema(config.outputSchema);
   markSdkValidatedInputs(sdkInputSchema);
-  skipDuplicateOutputValidation(sdkOutputSchema);
   server.registerTool(
     name,
     {
@@ -200,49 +197,19 @@ function markValidatedInput<Result>(result: Result): Result {
   return result;
 }
 
-function skipDuplicateOutputValidation(schema: StandardSchemaWithJSON): void {
-  if (cachedOutputValidators.has(schema)) return;
-  const standard = (schema as unknown as StandardSchemaWithJSON)["~standard"];
-  const originalValidate = standard.validate;
-  Object.defineProperty(standard, "validate", {
-    configurable: true,
-    enumerable: true,
-    value: (value: unknown, options: unknown) => {
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        locallyValidatedOutputs.has(value)
-      ) {
-        return { value };
-      }
-      return originalValidate(value, options as never);
-    },
-    writable: true,
-  });
-  cachedOutputValidators.add(schema);
-}
-
 export function structuredResult<OutputSchema extends AnyObjectSchema>(
-  schema: OutputSchema,
+  _schema: OutputSchema,
   value: Infer<OutputSchema>,
   textContent?: string,
 ): CallToolResult {
-  const validation = compileSchema(schema)["~standard"].validate(value);
-  if (validation instanceof Promise) {
-    throw new Error("Ecobee output schemas must validate synchronously.");
-  }
-  if ("issues" in validation) {
-    throw new Error("Ecobee produced an invalid structured result.");
-  }
-  const parsed = validation.value as Record<string, unknown>;
-  locallyValidatedOutputs.add(parsed);
+  const structuredContent = value as Record<string, unknown>;
   const text =
     typeof textContent === "string" ? textContent : STRUCTURED_RESULT_TEXT;
   const result: CallToolResult = {
     content: [{ type: "text", text }],
-    structuredContent: parsed,
+    structuredContent,
   };
-  const resultBytes = serializedResultBytes(text, parsed);
+  const resultBytes = serializedResultBytes(text, structuredContent);
   if (resultBytes > MAX_TOOL_RESULT_BYTES) {
     throw new EcobeeResponseLimitError(MAX_TOOL_RESULT_BYTES);
   }

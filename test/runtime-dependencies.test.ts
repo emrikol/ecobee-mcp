@@ -14,7 +14,7 @@ describe("runtime dependency boundary", () => {
     ]);
     for (const specifier of Object.values(packageJson.dependencies ?? {})) {
       expect(specifier).toMatch(
-        /^file:vendor\/modelcontextprotocol-(?:core|node|server)-2\.0\.0-mod-perf-346fdcc\.tgz$/,
+        /^file:vendor\/modelcontextprotocol-(?:core|node|server)-2\.0\.0-mod-perf-b7608a8\.tgz$/,
       );
     }
   });

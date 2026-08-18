@@ -9,7 +9,7 @@ import {
 } from "node:http";
 import { createGzip, type Gzip } from "node:zlib";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import { createMcpHandler } from "@modelcontextprotocol/server";
+import { createMcpHandler } from "@modelcontextprotocol/server/runtime";
 import { MCP_PROTOCOL_VERSION, SERVICE_VERSION } from "./constants.js";
 import type { EcobeeApiClient } from "./ecobee/api.js";
 import type { EcobeeCache } from "./ecobee/cache.js";
@@ -33,6 +33,7 @@ export interface HttpServiceOptions {
   cache: EcobeeCache;
   plugins?: EcobeePlugin[];
   authToken?: string;
+  performanceCaches?: boolean;
 }
 
 export interface NodeHttpApplication {
@@ -54,7 +55,13 @@ export function createHttpService(
 ): EcobeeHttpService {
   const plugins = options.plugins ?? [];
   const mcp = createMcpHandler(
-    () => createMcpServer(options.api, options.cache, plugins),
+    () =>
+      createMcpServer(
+        options.api,
+        options.cache,
+        plugins,
+        options.performanceCaches,
+      ),
     { legacy: "reject", responseMode: "auto" },
   );
   const handleMcp = toNodeHandler(mcp);

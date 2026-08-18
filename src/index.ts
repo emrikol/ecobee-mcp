@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   const authToken = process.env.MCP_AUTH_TOKEN;
   const credentialsPath = process.env.CREDENTIALS_PATH;
   const authMode = parseAuthMode(process.env.AUTH_MODE);
+  const performanceCaches = process.env.MCP_PERFORMANCE_CACHES !== "0";
   const plugins = await loadPlugins();
 
   let credentialProvider: CredentialProvider = new FileCredentialProvider(
@@ -33,7 +34,13 @@ async function main(): Promise<void> {
     if (plugin.onTokenRefresh) auth.addTokenRefreshHook(plugin.onTokenRefresh);
   }
 
-  const service = createHttpService({ api, cache, plugins, authToken });
+  const service = createHttpService({
+    api,
+    cache,
+    plugins,
+    authToken,
+    performanceCaches,
+  });
   const listener = service.app.listen(port, "0.0.0.0", () => {
     console.log(`[main] Ecobee MCP server listening on 0.0.0.0:${port}`);
     console.log(`[main] Auth mode: ${authMode}`);
@@ -41,6 +48,9 @@ async function main(): Promise<void> {
       `[main] MCP bearer auth: ${authToken ? "enabled" : "disabled"}`,
     );
     console.log(`[main] Plugins loaded: ${plugins.length}`);
+    console.log(
+      `[main] MCP performance caches: ${performanceCaches ? "enabled" : "disabled"}`,
+    );
   });
 
   let shuttingDown = false;
