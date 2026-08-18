@@ -6,13 +6,12 @@ import {
 } from "./constants.js";
 
 /* v8 ignore start -- Integration test: MCP server factory wiring.
-   Test that createMcpServer correctly registers all built-in tools/resources
-   and applies plugin tools/resources. Verify with MCP Inspector or real
-   MCP client session that all 24 tools and 3 resources are discoverable. */
+   Test that createMcpServer registers one captured tool-catalog snapshot plus
+   startup-static resources. Verify with an official client session. */
 import type { EcobeeApiClient } from "./ecobee/api.js";
 import type { EcobeeCache } from "./ecobee/cache.js";
 import type { EcobeePlugin } from "./plugins/types.js";
-import { registerAllTools } from "./tools/index.js";
+import { registerCatalogTools, type ToolCatalogSnapshot } from "./catalog.js";
 import { registerAllResources } from "./resources/index.js";
 
 /**
@@ -22,8 +21,10 @@ import { registerAllResources } from "./resources/index.js";
 export function createMcpServer(
   api: EcobeeApiClient,
   cache: EcobeeCache,
-  plugins: EcobeePlugin[] = [],
+  catalog: ToolCatalogSnapshot,
+  resourcePlugins: readonly EcobeePlugin[] = [],
   performanceCaches = true,
+  toolsListChanged = false,
 ): McpServer {
   const server = new McpServer(
     {
@@ -34,25 +35,21 @@ export function createMcpServer(
       supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
       performanceCaches,
       capabilities: {
-        tools: { listChanged: false },
+        tools: { listChanged: toolsListChanged },
         resources: { listChanged: false },
       },
     },
   );
 
-  // Register built-in tools and resources
-  registerAllTools(server, api, cache);
+  // The request retains this exact catalog snapshot for its full lifetime.
+  registerCatalogTools(server, catalog);
   registerAllResources(server, api, cache);
 
-  // Register plugin tools and resources
-  for (const plugin of plugins) {
-    if (plugin.registerTools) {
-      plugin.registerTools(server, api, cache);
-      console.log("[server] Registered plugin tools");
-    }
+  // Resource plugins remain startup-static. Only the tool catalog has an
+  // explicit runtime reload boundary and matching list-changed capability.
+  for (const plugin of resourcePlugins) {
     if (plugin.registerResources) {
       plugin.registerResources(server, cache);
-      console.log("[server] Registered plugin resources");
     }
   }
 

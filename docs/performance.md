@@ -159,6 +159,21 @@ footprints, but the paired delta is meaningful.
 
 ## Production memory baseline
 
+Version 2.4.0 constructs the built-in tool configurations and handler closures
+once in the shared startup snapshot. Per-request servers still perform the SDK
+registration required by `createMcpHandler`, but no longer rebuild the
+application-owned wrappers. The normal plugins-disabled path does not execute
+request-snapshot bookkeeping, scan plugin files, or compile plugin validators.
+
+When operator-controlled plugin reload is enabled, each request holds one
+catalog snapshot reference for its lifetime. Superseded snapshots become
+collectible as soon as their in-flight requests finish. Plugin candidate
+validation deliberately compiles candidate schemas with the SDK at startup and
+on `SIGHUP`; that opt-in correctness cost can load AJV before the first tool
+call. Node's ESM cache retains each distinct imported plugin module version
+until restart even after its catalog snapshot is collectible; catalog reload
+is intended for operator changes, not high-frequency dynamic code generation.
+
 The deployed service is a bare-metal systemd process on an 8 GiB Raspberry Pi
 running Node 20.20.0. Before 2.3.0 it held approximately 98–100 MiB RSS,
 including roughly 58–60 MiB of anonymous memory. Version 2.3.0 settled near
@@ -197,9 +212,14 @@ zlib module. Small tool reads and event streams bypass compression.
 
 | Response                   | Decoded bytes | Wire bytes | Reduction | Encoding |
 | -------------------------- | ------------: | ---------: | --------: | -------- |
-| `tools/list`               |        47,866 |      5,355 |     88.8% | gzip     |
+| `tools/list`               |        50,914 |      5,518 |     89.2% | gzip     |
 | Cached thermostat status   |           560 |        560 |         0 | identity |
 | Full-day runtime intervals |       119,915 |     11,617 |     90.3% | gzip     |
+
+Version 2.4.0 adds the deterministic catalog fingerprint to each tool's
+`_meta`, increasing the decoded discovery document by about 3 KiB and the gzip
+wire response by 163 bytes. The repeated metadata lets a client verify that
+every definition came from one complete snapshot.
 
 The runtime result previously serialized the same large object into both text
 and `structuredContent`, producing about 325 KiB before the outer response-size

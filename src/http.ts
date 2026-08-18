@@ -9,8 +9,18 @@ import {
 } from "node:http";
 import { createGzip, type Gzip } from "node:zlib";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import { createMcpHandler } from "@modelcontextprotocol/server/runtime";
+import {
+  createMcpHandler,
+  type McpHttpHandler,
+  type ServerEventBus,
+} from "@modelcontextprotocol/server/runtime";
 import { MCP_PROTOCOL_VERSION, SERVICE_VERSION } from "./constants.js";
+import {
+  ToolCatalogStore,
+  type CatalogReloadResult,
+  type ToolCatalogInfo,
+  type ToolCatalogLoader,
+} from "./catalog.js";
 import type { EcobeeApiClient } from "./ecobee/api.js";
 import type { EcobeeCache } from "./ecobee/cache.js";
 import type { EcobeePlugin } from "./plugins/types.js";
@@ -32,6 +42,8 @@ export interface HttpServiceOptions {
   api: EcobeeApiClient;
   cache: EcobeeCache;
   plugins?: EcobeePlugin[];
+  catalogLoader?: ToolCatalogLoader;
+  eventBus?: ServerEventBus;
   authToken?: string;
   performanceCaches?: boolean;
 }
@@ -48,23 +60,60 @@ export interface NodeHttpApplication {
 export interface EcobeeHttpService {
   app: NodeHttpApplication;
   close: () => Promise<void>;
+  catalog: () => ToolCatalogInfo;
+  reloadCatalog: () => Promise<CatalogReloadResult>;
 }
 
-export function createHttpService(
+export async function createHttpService(
   options: HttpServiceOptions,
-): EcobeeHttpService {
+): Promise<EcobeeHttpService> {
   const plugins = options.plugins ?? [];
+  let publishToolsChanged = (): void => undefined;
+  const catalog = await ToolCatalogStore.create(
+    options.api,
+    options.cache,
+    plugins,
+    options.catalogLoader,
+    () => publishToolsChanged(),
+  );
+  const toolsListChanged = options.catalogLoader !== undefined;
+  const requestCatalogs = toolsListChanged
+    ? new WeakMap<Request, ReturnType<typeof catalog.capture>>()
+    : undefined;
   const mcp = createMcpHandler(
-    () =>
-      createMcpServer(
+    ({ requestInfo }) => {
+      const snapshot =
+        (requestInfo && requestCatalogs?.get(requestInfo)) ?? catalog.capture();
+      return createMcpServer(
         options.api,
         options.cache,
+        snapshot,
         plugins,
         options.performanceCaches,
-      ),
-    { legacy: "reject", responseMode: "auto" },
+        toolsListChanged,
+      );
+    },
+    {
+      legacy: "reject",
+      responseMode: "auto",
+      ...(options.eventBus ? { bus: options.eventBus } : {}),
+    },
   );
-  const handleMcp = toNodeHandler(mcp);
+  publishToolsChanged = () => mcp.notify.toolsChanged();
+  const snapshotBoundMcp: McpHttpHandler | undefined = requestCatalogs
+    ? {
+        ...mcp,
+        fetch: async (request, requestOptions) => {
+          requestCatalogs.set(request, catalog.capture());
+          try {
+            return await mcp.fetch(request, requestOptions);
+          } finally {
+            requestCatalogs.delete(request);
+          }
+        },
+      }
+    : undefined;
+  const handleMcp = toNodeHandler(snapshotBoundMcp ?? mcp);
 
   const requestListener = (
     request: IncomingMessage,
@@ -143,7 +192,12 @@ export function createHttpService(
     },
   });
 
-  return { app, close: mcp.close };
+  return {
+    app,
+    close: mcp.close,
+    catalog: () => catalog.info(),
+    reloadCatalog: () => catalog.reload(),
+  };
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {

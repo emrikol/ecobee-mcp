@@ -46,7 +46,7 @@ let requestId = 1;
 const api = createBenchmarkApi();
 const transportApi = createTransportBenchmarkApi();
 const cache = new EcobeeCache();
-const service = createHttpService({ api, cache, performanceCaches });
+const service = await createHttpService({ api, cache, performanceCaches });
 const listener = service.app.listen(0, "127.0.0.1");
 await once(listener, "listening");
 const address = listener.address();

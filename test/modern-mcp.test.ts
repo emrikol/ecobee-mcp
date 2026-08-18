@@ -7,11 +7,21 @@ import {
   PROTOCOL_VERSION_META_KEY,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import {
+  fromJsonSchema,
+  type JsonSchemaType,
+} from "@modelcontextprotocol/server/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  CATALOG_FINGERPRINT_META_KEY,
+  type ToolCatalogLoader,
+  type ToolCatalogRegistrar,
+} from "../src/catalog.js";
 import { MCP_PROTOCOL_VERSION, SERVICE_VERSION } from "../src/constants.js";
 import type { EcobeeApiClient } from "../src/ecobee/api.js";
 import { EcobeeCache } from "../src/ecobee/cache.js";
 import { createHttpService, type EcobeeHttpService } from "../src/http.js";
+import type { EcobeePlugin } from "../src/plugins/types.js";
 
 const READ_TOOLS = [
   "list_thermostats",
@@ -51,6 +61,11 @@ interface Harness {
   endpoint: URL;
   httpServer: HttpServer;
   service: EcobeeHttpService;
+}
+
+interface CatalogHarnessOptions {
+  plugins: readonly EcobeePlugin[];
+  catalogLoader: ToolCatalogLoader;
 }
 
 const openClients: Client[] = [];
@@ -146,6 +161,264 @@ describe("modern MCP HTTP endpoint", () => {
     expect(schemaDigest).toBe(
       "b3a695a0a28b6af6bb27946b45c30289ac541efa277dcdc701576cb7276537fe",
     );
+  });
+
+  it("publishes one atomic catalog change through a modern subscription", async () => {
+    let plugins: readonly EcobeePlugin[] = [
+      catalogPlugin("catalog_kept", "old"),
+      catalogPlugin("catalog_removed", "old"),
+    ];
+    const api = createFakeApi();
+    const catalogLoader = vi.fn(async () => plugins);
+    const harness = await startHarness(api, true, {
+      plugins,
+      catalogLoader,
+    });
+    const client = await connectModern(harness.endpoint);
+
+    expect(client.getServerCapabilities()?.tools).toEqual({
+      listChanged: true,
+    });
+    const initial = await client.listTools();
+    const initialInfo = harness.service.catalog();
+    expect(catalogFingerprint(initial.tools)).toBe(initialInfo.fingerprint);
+    expect(catalogLoader).not.toHaveBeenCalled();
+
+    let notifications = 0;
+    let notificationReceived!: () => void;
+    const notified = new Promise<void>((resolve) => {
+      notificationReceived = resolve;
+    });
+    client.setNotificationHandler(
+      "notifications/tools/list_changed",
+      async () => {
+        notifications++;
+        notificationReceived();
+      },
+    );
+    const subscription = await client.listen({ toolsListChanged: true });
+    expect(subscription.honoredFilter).toEqual({ toolsListChanged: true });
+
+    plugins = [
+      catalogPlugin("catalog_removed", "old"),
+      catalogPlugin("catalog_kept", "old", undefined, "refreshed-handler"),
+    ];
+    expect(await harness.service.reloadCatalog()).toMatchObject({
+      accepted: true,
+      changed: false,
+      fingerprint: initialInfo.fingerprint,
+      generation: initialInfo.generation + 1,
+    });
+    expect(catalogLoader).toHaveBeenCalledTimes(1);
+    expect(notifications).toBe(0);
+    await expect(
+      client.callTool({ name: "catalog_kept", arguments: {} }),
+    ).resolves.toMatchObject({
+      content: [{ type: "text", text: "refreshed-handler" }],
+      structuredContent: { revision: "old" },
+    });
+
+    plugins = [
+      catalogPlugin("catalog_added", "new"),
+      catalogPlugin("catalog_kept", "new"),
+    ];
+    const reload = await harness.service.reloadCatalog();
+    expect(catalogLoader).toHaveBeenCalledTimes(2);
+    expect(reload).toMatchObject({
+      accepted: true,
+      changed: true,
+      generation: 3,
+    });
+    await notified;
+    expect(notifications).toBe(1);
+
+    const updated = await client.listTools();
+    expect(catalogFingerprint(updated.tools)).toBe(reload.fingerprint);
+    expect(updated.tools.map(({ name }) => name).sort()).toEqual(
+      [...EXPECTED_TOOLS, "catalog_added", "catalog_kept"].sort(),
+    );
+    expect(updated.tools.some(({ name }) => name === "catalog_removed")).toBe(
+      false,
+    );
+    const changed = updated.tools.find(({ name }) => name === "catalog_kept");
+    expect(changed).toMatchObject({
+      description: "Catalog test tool new",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      outputSchema: {
+        type: "object",
+        properties: { revision: { type: "string", const: "new" } },
+        required: ["revision"],
+        additionalProperties: false,
+      },
+      _meta: {
+        "test/source": "new",
+        [CATALOG_FINGERPRINT_META_KEY]: reload.fingerprint,
+      },
+    });
+    expect(changed?.inputSchema).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    });
+    expect(changed?.outputSchema).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { revision: { type: "string", const: "new" } },
+      required: ["revision"],
+      additionalProperties: false,
+    });
+    expect(updated.tools.some(({ name }) => name === "catalog_added")).toBe(
+      true,
+    );
+
+    await subscription.close();
+    await client.close();
+    const reconnected = await connectModern(harness.endpoint);
+    const reconnectedTools = await reconnected.listTools();
+    expect(catalogFingerprint(reconnectedTools.tools)).toBe(reload.fingerprint);
+    expect(reconnectedTools.tools.map(({ name }) => name).sort()).toEqual(
+      [...EXPECTED_TOOLS, "catalog_added", "catalog_kept"].sort(),
+    );
+    expect(
+      reconnectedTools.tools.some(({ name }) => name === "catalog_removed"),
+    ).toBe(false);
+    for (const call of allApiSpies(api)) expect(call).not.toHaveBeenCalled();
+  });
+
+  it("retains last-good catalog and emits nothing for rejected candidates", async () => {
+    let plugins: readonly EcobeePlugin[] = [
+      catalogPlugin("catalog_valid", "one"),
+    ];
+    const api = createFakeApi();
+    const harness = await startHarness(api, true, {
+      plugins,
+      catalogLoader: async () => plugins,
+    });
+    const client = await connectModern(harness.endpoint);
+    const initial = await client.listTools();
+    const initialInfo = harness.service.catalog();
+    let notifications = 0;
+    let validNotification!: () => void;
+    const validNotified = new Promise<void>((resolve) => {
+      validNotification = resolve;
+    });
+    client.setNotificationHandler("notifications/tools/list_changed", () => {
+      notifications++;
+      validNotification();
+    });
+    const subscription = await client.listen({ toolsListChanged: true });
+
+    plugins = [{ name: "" } as EcobeePlugin];
+    expect(await harness.service.reloadCatalog()).toMatchObject({
+      accepted: false,
+      changed: false,
+      fingerprint: initialInfo.fingerprint,
+      generation: initialInfo.generation,
+    });
+
+    plugins = [malformedSchemaPlugin()];
+    expect(await harness.service.reloadCatalog()).toMatchObject({
+      accepted: false,
+      changed: false,
+      fingerprint: initialInfo.fingerprint,
+      generation: initialInfo.generation,
+    });
+
+    plugins = [unboundedCompositeSchemaPlugin()];
+    expect(await harness.service.reloadCatalog()).toMatchObject({
+      accepted: false,
+      changed: false,
+      fingerprint: initialInfo.fingerprint,
+      generation: initialInfo.generation,
+    });
+
+    plugins = [catalogPlugin("list_thermostats", "collision")];
+    expect(await harness.service.reloadCatalog()).toMatchObject({
+      accepted: false,
+      changed: false,
+      fingerprint: initialInfo.fingerprint,
+      generation: initialInfo.generation,
+    });
+    expect(harness.service.catalog()).toEqual(initialInfo);
+
+    plugins = [catalogPlugin("catalog_valid", "two")];
+    const valid = await harness.service.reloadCatalog();
+    expect(valid).toMatchObject({ accepted: true, changed: true });
+    await validNotified;
+    expect(notifications).toBe(1);
+
+    const updated = await client.listTools();
+    expect(catalogFingerprint(updated.tools)).toBe(valid.fingerprint);
+    expect(catalogFingerprint(initial.tools)).toBe(initialInfo.fingerprint);
+    for (const call of allApiSpies(api)) expect(call).not.toHaveBeenCalled();
+    await subscription.close();
+  });
+
+  it("keeps an in-flight tool call on its captured catalog snapshot", async () => {
+    const executions: string[] = [];
+    let releaseOld!: () => void;
+    let oldStarted!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      oldStarted = resolve;
+    });
+    let plugins: readonly EcobeePlugin[] = [
+      inFlightCatalogPlugin(
+        "old",
+        async () => {
+          oldStarted();
+          await release;
+        },
+        () => executions.push("old"),
+      ),
+    ];
+    const api = createFakeApi();
+    const harness = await startHarness(api, true, {
+      plugins,
+      catalogLoader: async () => plugins,
+    });
+    const client = await connectModern(harness.endpoint);
+    await client.listTools();
+
+    const oldCall = client.request({
+      method: "tools/call",
+      params: {
+        name: "catalog_slow",
+        arguments: {},
+      },
+    });
+    await started;
+    plugins = [
+      inFlightCatalogPlugin("new", undefined, () => executions.push("new")),
+    ];
+    expect(await harness.service.reloadCatalog()).toMatchObject({
+      accepted: true,
+      changed: true,
+    });
+    releaseOld();
+    expect(executions).toEqual([]);
+    const oldResult = await oldCall;
+    expect({ oldResult, executions }).toMatchObject({
+      oldResult: { structuredContent: { revision: "old" } },
+      executions: ["old"],
+    });
+    const currentClient = await connectModern(harness.endpoint);
+    await currentClient.listTools();
+    await expect(
+      currentClient.request({
+        method: "tools/call",
+        params: { name: "catalog_slow", arguments: {} },
+      }),
+    ).resolves.toMatchObject({ structuredContent: { revision: "new" } });
+    for (const call of allApiSpies(api)) expect(call).not.toHaveBeenCalled();
   });
 
   it("compresses large discovery responses without taxing small reads", async () => {
@@ -449,10 +722,13 @@ describe("modern MCP HTTP endpoint", () => {
 async function startHarness(
   api = createFakeApi(),
   performanceCaches = true,
+  catalogOptions?: CatalogHarnessOptions,
 ): Promise<Harness> {
-  const service = createHttpService({
+  const service = await createHttpService({
     api,
     cache: new EcobeeCache(),
+    plugins: catalogOptions ? [...catalogOptions.plugins] : undefined,
+    catalogLoader: catalogOptions?.catalogLoader,
     authToken: AUTH_TOKEN,
     performanceCaches,
   });
@@ -489,6 +765,157 @@ async function connectModern(
   });
   await client.connect(transport);
   return client;
+}
+
+function catalogPlugin(
+  toolName: string,
+  revision: string,
+  beforeResult?: () => Promise<void>,
+  responseText = revision,
+): EcobeePlugin {
+  const inputSchema = fromJsonSchema({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  });
+  const outputSchema = fromJsonSchema({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: { revision: { type: "string", const: revision } },
+    required: ["revision"],
+    additionalProperties: false,
+  });
+  return {
+    name: `plugin-${toolName}`,
+    registerTools(catalog: ToolCatalogRegistrar) {
+      catalog.registerTool(
+        toolName,
+        {
+          description: `Catalog test tool ${revision}`,
+          inputSchema,
+          outputSchema,
+          annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+          _meta: { "test/source": revision },
+        },
+        async () => {
+          await beforeResult?.();
+          return {
+            content: [{ type: "text", text: responseText }],
+            structuredContent: { revision },
+          };
+        },
+      );
+    },
+  };
+}
+
+function malformedSchemaPlugin(): EcobeePlugin {
+  const malformed = fromJsonSchema({
+    type: "not-a-json-schema-type",
+  } as unknown as JsonSchemaType);
+  return {
+    name: "malformed-schema",
+    registerTools(catalog) {
+      catalog.registerTool(
+        "catalog_malformed",
+        {
+          inputSchema: malformed,
+          outputSchema: malformed,
+          annotations: { readOnlyHint: true },
+        },
+        async () => ({ content: [{ type: "text", text: "unreachable" }] }),
+      );
+    },
+  };
+}
+
+function unboundedCompositeSchemaPlugin(): EcobeePlugin {
+  const inputSchema = fromJsonSchema({
+    type: "object",
+    properties: {
+      value: {
+        oneOf: [{ type: "string" }, { type: "array", items: {} }],
+      },
+    },
+    additionalProperties: false,
+  });
+  const outputSchema = fromJsonSchema({
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  });
+  return {
+    name: "unbounded-composite-schema",
+    registerTools(catalog) {
+      catalog.registerTool(
+        "catalog_unbounded_composite",
+        {
+          inputSchema,
+          outputSchema,
+          annotations: { readOnlyHint: true },
+        },
+        async () => ({ content: [{ type: "text", text: "unreachable" }] }),
+      );
+    },
+  };
+}
+
+function inFlightCatalogPlugin(
+  revision: string,
+  beforeResult?: () => Promise<void>,
+  returning?: () => void,
+): EcobeePlugin {
+  const inputSchema = fromJsonSchema({
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  });
+  const outputSchema = fromJsonSchema({
+    type: "object",
+    properties: { revision: { type: "string", maxLength: 8 } },
+    required: ["revision"],
+    additionalProperties: false,
+  });
+  return {
+    name: "plugin-catalog-slow",
+    registerTools(catalog) {
+      catalog.registerTool(
+        "catalog_slow",
+        {
+          description: `In-flight snapshot ${revision}`,
+          inputSchema,
+          outputSchema,
+          annotations: { readOnlyHint: true },
+        },
+        async () => {
+          await beforeResult?.();
+          returning?.();
+          return {
+            content: [{ type: "text", text: revision }],
+            structuredContent: { revision },
+          };
+        },
+      );
+    },
+  };
+}
+
+function catalogFingerprint(
+  tools: Array<{ _meta?: Record<string, unknown> }>,
+): string {
+  const values = new Set(
+    tools.map((tool) => tool._meta?.[CATALOG_FINGERPRINT_META_KEY]),
+  );
+  expect(values.size).toBe(1);
+  const fingerprint = [...values][0];
+  expect(fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  return String(fingerprint);
 }
 
 function createFakeApi(
@@ -610,6 +1037,16 @@ function writeSpies(api: EcobeeApiClient): Array<ReturnType<typeof vi.fn>> {
     api.sendMessage,
     api.updateComfortProfile,
     api.updateGroups,
+  ] as Array<ReturnType<typeof vi.fn>>;
+}
+
+function allApiSpies(api: EcobeeApiClient): Array<ReturnType<typeof vi.fn>> {
+  return [
+    api.getThermostats,
+    api.getThermostatSummary,
+    api.getRuntimeReport,
+    api.getGroups,
+    ...writeSpies(api),
   ] as Array<ReturnType<typeof vi.fn>>;
 }
 

@@ -16,7 +16,7 @@ architecture decision, not unfinished migration work.
   lazy SDK runtime, including roughly 37 MiB anonymous memory.
 - It is the only Node process on the Pi.
 - The deterministic fake-transport benchmark and complete test suite remain
-  the parity baseline for release 2.3.1.
+  the parity baseline for release 2.4.0.
 
 ### Reconsider Rust when any trigger is met
 

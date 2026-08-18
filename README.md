@@ -18,8 +18,9 @@ Version 2 is forward-only: it uses `server/discover`, advertises only MCP `2026-
 
 ## Features
 
-**24 tools** covering the supported Ecobee operations. Every tool has a strict,
-bounded input schema, a bounded output schema, and an explicit safety annotation.
+**24 built-in tools** covering the supported Ecobee operations. Every tool has
+a strict, bounded input schema, a bounded output schema, and an explicit safety
+annotation.
 
 | Tool                     | Class    | Operation                          |
 | ------------------------ | -------- | ---------------------------------- |
@@ -63,7 +64,7 @@ delivery is ambiguous.
 
 - Bearer token authentication
 - Two auth modes: `readonly` (another app manages tokens) or `full` (manages its own OAuth refresh)
-- Plugin system for custom credential providers and extra tools
+- Plugin system for custom credential providers and atomically reloadable tools
 - 60-second read cache with in-flight request deduplication
 - Bounded deadlines, concurrency, rate-limit retries, and response sizes
 - Selective built-in gzip compression for large discovery and read responses
@@ -132,6 +133,9 @@ SDK performance caches default to enabled. Set `MCP_PERFORMANCE_CACHES=0` only
 for a measured hard-memory constraint; it lowers allocator growth under heavy
 traffic but materially reduces tool-call throughput.
 
+`ENABLE_PLUGINS=1` enables plugin loading and the operator-controlled tool
+catalog reload boundary. It is disabled by default.
+
 ### 4. Run
 
 ```bash
@@ -168,11 +172,27 @@ const transport = new StreamableHTTPClientTransport(
   },
 );
 await client.connect(transport);
+
+if (client.getServerCapabilities()?.tools?.listChanged) {
+  client.setNotificationHandler(
+    "notifications/tools/list_changed",
+    async () => {
+      const latest = await client.listTools();
+      console.log("Updated catalog", latest.tools);
+    },
+  );
+  await client.listen({ toolsListChanged: true });
+}
 ```
 
 The v2 client still defaults to its legacy connection flow unless `versionNegotiation` is configured. A client that cannot perform `server/discover` and send the modern per-request metadata cannot consume this endpoint.
 
-The server advertises only tools and resources. It intentionally does not advertise prompts, sampling, elicitation, logging, subscriptions, experimental extensions, or Tasks.
+The server advertises only tool and resource capabilities. It intentionally
+does not advertise prompts, sampling, elicitation, logging, experimental
+extensions, or Tasks. When plugin catalog reload is enabled, the tool
+capability advertises `listChanged: true` and modern clients can receive change
+notifications through `subscriptions/listen`; otherwise `listChanged` remains
+false.
 
 This is a forward-facing version boundary. There is no legacy handshake,
 protocol alias, or dual-stack compatibility path.
@@ -200,13 +220,54 @@ interface EcobeePlugin {
   credentialProvider?: CredentialProvider;
   onTokenRefresh?: (creds: EcobeeCredentials) => Promise<void>;
   registerTools?: (
-    server: McpServer,
+    catalog: ToolCatalogRegistrar,
     api: EcobeeApiClient,
     cache: EcobeeCache,
   ) => void;
   registerResources?: (server: McpServer, cache: EcobeeCache) => void;
 }
 ```
+
+`ToolCatalogRegistrar` deliberately exposes only `registerTool`. Every plugin
+tool must provide a unique MCP-safe name, bounded object input and output JSON
+Schemas, and an explicit boolean `annotations.readOnlyHint`. Plugin schemas are
+compiled with the SDK before publication. A malformed plugin, invalid schema,
+or name collision rejects the complete candidate.
+
+### Reloading the tool catalog
+
+With `ENABLE_PLUGINS=1`, replace the plugin files and send the service one
+`SIGHUP`:
+
+```bash
+sudo systemctl kill --signal=HUP --kill-whom=main ecobee-mcp
+```
+
+Normal MCP requests never trigger a filesystem scan or catalog reload. A
+`SIGHUP` loads and validates the complete candidate before atomically swapping
+the shared snapshot. Requests already in progress retain their old snapshot;
+subsequent requests receive the new generation. Failed candidates leave the
+last-good generation active and emit no notification. A reload whose
+deterministic fingerprint is unchanged still publishes refreshed handler code
+but emits no notification because the client-visible catalog did not change.
+
+Each listed tool carries the accepted catalog SHA-256 in
+`_meta["io.github.emrikol/ecobee-mcp.catalogFingerprint"]`. Clients that want
+change notifications must open `subscriptions/listen` with
+`toolsListChanged: true`; one accepted catalog change produces one
+`notifications/tools/list_changed` notification.
+
+Only plugin tools reload. Credential providers, token-refresh hooks, and
+plugin resources are process-lifetime configuration and still require a
+restart. The normal deployment is one Node process and uses the SDK's in-memory
+event bus. A multi-process embedding must pass one shared `ServerEventBus` to
+`createHttpService`; do not run independent in-memory buses behind one
+endpoint.
+
+Superseded catalog snapshots are collectible after their in-flight requests
+finish. Node's ESM loader retains evaluated module records, however, so a
+service that cycles through many distinct plugin code versions should receive
+a planned restart to reclaim that module-loader memory.
 
 ### Example: Custom credential provider
 

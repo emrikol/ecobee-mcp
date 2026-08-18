@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-08-18
+
+### Added
+
+- Added an explicit `SIGHUP` tool-catalog reload boundary for opt-in plugins.
+  Normal MCP requests never scan or reload the catalog.
+- Added immutable catalog generations with deterministic SHA-256 fingerprints,
+  complete candidate validation, collision rejection, and last-good retention.
+- Added MCP `2026-07-28` tool-list change delivery through the retained HTTP
+  handler and `subscriptions/listen`. A shared `ServerEventBus` can be supplied
+  by multi-process embeddings.
+
+### Changed
+
+- Requests capture one complete catalog snapshot at HTTP entry. Accepted
+  candidates publish with one atomic pointer swap; in-flight calls retain the
+  old generation and later requests receive the new one.
+- Reloaded handler code is published even when its client-visible catalog
+  fingerprint is unchanged; that case correctly emits no list-change event.
+- Built-in tool configurations and application handler wrappers are now built
+  once per process and replayed into the SDK's per-request servers.
+- `tools.listChanged` is advertised only when a catalog loader is configured.
+  Plugin resources, credential providers, and refresh hooks remain
+  process-lifetime configuration.
+- Plugin loading is deterministic and all-or-nothing. Changed `.js` modules are
+  cache-busted only at the explicit load boundary.
+
+### Tests
+
+- Added official TypeScript SDK v2 client coverage for capabilities,
+  subscription delivery, exact fingerprints and schemas, removed and changed
+  tools, in-flight isolation, rejected candidates, and reconnect behavior.
+- All catalog tests use injected fake Ecobee APIs and perform no thermostat
+  mutation, live API request, or paid-model call.
+
 ## [2.3.1] - 2026-08-17
 
 ### Changed

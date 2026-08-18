@@ -1,5 +1,6 @@
-import { readdir, realpath } from "node:fs/promises";
-import { join, resolve, extname } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile, readdir, realpath } from "node:fs/promises";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { EcobeePlugin } from "./types.js";
 
@@ -45,7 +46,9 @@ function isValidPlugin(obj: unknown): obj is EcobeePlugin {
 /**
  * Loads plugins from the plugins/ directory.
  * Only enabled when ENABLE_PLUGINS=1 env var is set.
- * Returns loaded plugins; first plugin with credentialProvider wins.
+ * Returns one complete, deterministic candidate set. A malformed plugin
+ * rejects the entire load so a caller can retain its last-good catalog.
+ * The first plugin with a credentialProvider wins at process startup.
  */
 export async function loadPlugins(baseDir?: string): Promise<EcobeePlugin[]> {
   if (process.env.ENABLE_PLUGINS !== "1") {
@@ -58,7 +61,7 @@ export async function loadPlugins(baseDir?: string): Promise<EcobeePlugin[]> {
   let entries: string[];
   try {
     const files = await readdir(pluginDir);
-    entries = files.filter((f) => extname(f) === ".js");
+    entries = files.filter((f) => extname(f) === ".js").sort();
   } catch /* v8 ignore start -- Integration test: plugins dir doesn't exist on filesystem. */ {
     console.log(`[plugins] No plugins directory found at ${pluginDir}`);
     return [];
@@ -71,6 +74,7 @@ export async function loadPlugins(baseDir?: string): Promise<EcobeePlugin[]> {
   }
 
   const plugins: EcobeePlugin[] = [];
+  const pluginNames = new Set<string>();
   let credentialProviderOwner: string | null = null;
 
   for (const filename of entries) {
@@ -78,38 +82,43 @@ export async function loadPlugins(baseDir?: string): Promise<EcobeePlugin[]> {
 
     // Symlink protection: resolved path must stay inside plugin dir
     const resolvedPath = await realpath(fullPath);
-    if (!resolvedPath.startsWith(resolvedPluginDir)) {
-      console.warn("[plugins] Skipping plugin that escapes plugin directory");
-      continue;
+    const relativePath = relative(resolvedPluginDir, resolvedPath);
+    if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+      throw new Error("Plugin path escapes the plugin directory.");
     }
 
     try {
-      const fileUrl = pathToFileURL(resolvedPath).href;
+      const source = await readFile(resolvedPath);
+      const digest = createHash("sha256").update(source).digest("hex");
+      const fileUrl = `${pathToFileURL(resolvedPath).href}?catalog=${digest}`;
       const mod = await import(fileUrl);
       const plugin = mod.default ?? mod;
 
       if (!isValidPlugin(plugin)) {
-        console.warn(
-          "[plugins] Skipping plugin: does not match EcobeePlugin interface",
-        );
-        continue;
+        throw new Error("Plugin does not match the EcobeePlugin interface.");
       }
+      if (pluginNames.has(plugin.name)) {
+        throw new Error("Duplicate plugin name.");
+      }
+      pluginNames.add(plugin.name);
 
-      if (plugin.credentialProvider) {
+      const loadedPlugin: EcobeePlugin = { ...plugin };
+
+      if (loadedPlugin.credentialProvider) {
         if (credentialProviderOwner) {
           console.warn("[plugins] Ignoring duplicate credential provider");
-          plugin.credentialProvider = undefined;
+          loadedPlugin.credentialProvider = undefined;
         } else {
           credentialProviderOwner = filename;
           console.log("[plugins] Registered credential provider");
         }
       }
 
-      plugins.push(plugin);
+      plugins.push(loadedPlugin);
       console.log("[plugins] Loaded plugin");
-    } catch /* v8 ignore start -- Integration test: malformed/unloadable plugin .js file. */ {
-      console.error("[plugins] Failed to load plugin");
-    } /* v8 ignore stop */
+    } catch {
+      throw new Error(`Plugin candidate ${filename} failed to load.`);
+    }
   }
 
   return plugins;

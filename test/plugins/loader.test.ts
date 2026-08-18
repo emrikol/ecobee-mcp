@@ -13,6 +13,7 @@ describe("loadPlugins", () => {
   });
 
   afterEach(async () => {
+    delete process.env.ENABLE_PLUGINS;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -39,7 +40,7 @@ describe("loadPlugins", () => {
     delete process.env.ENABLE_PLUGINS;
   });
 
-  it("should skip files that don't match plugin interface", async () => {
+  it("rejects the complete candidate when a plugin is malformed", async () => {
     process.env.ENABLE_PLUGINS = "1";
 
     // Missing name field
@@ -48,16 +49,19 @@ describe("loadPlugins", () => {
       "export default { notAPlugin: true };",
     );
 
-    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const plugins = await loadPlugins(tmpDir);
-
-    expect(plugins).toHaveLength(0);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("does not match"),
+    await expect(loadPlugins(tmpDir)).rejects.toThrow(
+      "Plugin candidate bad.js failed to load.",
     );
+  });
 
-    consoleSpy.mockRestore();
-    delete process.env.ENABLE_PLUGINS;
+  it("cache-busts changed modules at the explicit load boundary", async () => {
+    process.env.ENABLE_PLUGINS = "1";
+    const pluginPath = join(tmpDir, "plugins", "reloadable.js");
+    await writeFile(pluginPath, 'export default { name: "version-one" };');
+    expect((await loadPlugins(tmpDir))[0].name).toBe("version-one");
+
+    await writeFile(pluginPath, 'export default { name: "version-two" };');
+    expect((await loadPlugins(tmpDir))[0].name).toBe("version-two");
   });
 
   it("should only load .js files, not .ts", async () => {
@@ -118,15 +122,8 @@ describe("loadPlugins", () => {
     await writeFile(outsideFile, 'export default { name: "escape-attempt" };');
     await symlink(outsideFile, join(tmpDir, "plugins", "escape.js"));
 
-    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const plugins = await loadPlugins(tmpDir);
-
-    expect(plugins).toHaveLength(0);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("escapes plugin directory"),
+    await expect(loadPlugins(tmpDir)).rejects.toThrow(
+      "Plugin path escapes the plugin directory.",
     );
-
-    consoleSpy.mockRestore();
-    delete process.env.ENABLE_PLUGINS;
   });
 });

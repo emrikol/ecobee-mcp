@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   const credentialsPath = process.env.CREDENTIALS_PATH;
   const authMode = parseAuthMode(process.env.AUTH_MODE);
   const performanceCaches = process.env.MCP_PERFORMANCE_CACHES !== "0";
+  const pluginsEnabled = process.env.ENABLE_PLUGINS === "1";
   const plugins = await loadPlugins();
 
   let credentialProvider: CredentialProvider = new FileCredentialProvider(
@@ -34,10 +35,11 @@ async function main(): Promise<void> {
     if (plugin.onTokenRefresh) auth.addTokenRefreshHook(plugin.onTokenRefresh);
   }
 
-  const service = createHttpService({
+  const service = await createHttpService({
     api,
     cache,
     plugins,
+    catalogLoader: pluginsEnabled ? () => loadPlugins() : undefined,
     authToken,
     performanceCaches,
   });
@@ -51,7 +53,29 @@ async function main(): Promise<void> {
     console.log(
       `[main] MCP performance caches: ${performanceCaches ? "enabled" : "disabled"}`,
     );
+    console.log(
+      `[main] Tool catalog reload: ${pluginsEnabled ? "SIGHUP" : "disabled"}`,
+    );
   });
+
+  if (pluginsEnabled) {
+    process.on("SIGHUP", () => {
+      void service.reloadCatalog().then((result) => {
+        if (!result.accepted) {
+          console.error("[main] Tool catalog reload rejected");
+        } else if (result.changed) {
+          console.log(
+            `[main] Tool catalog generation ${result.generation} published`,
+          );
+          if (result.error) {
+            console.error("[main] Tool catalog change notification failed");
+          }
+        } else {
+          console.log("[main] Tool handlers refreshed; catalog unchanged");
+        }
+      });
+    });
+  }
 
   let shuttingDown = false;
   const shutdown = async () => {
