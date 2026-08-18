@@ -160,11 +160,18 @@ footprints, but the paired delta is meaningful.
 ## Production memory baseline
 
 The deployed service is a bare-metal systemd process on an 8 GiB Raspberry Pi
-running Node 20. Before 2.3.0 it held approximately 98–100 MiB RSS, including
-roughly 58–60 MiB of anonymous memory. After the performance-fork deployment,
-the same post-discovery sample settled near 110 MiB RSS with about 70 MiB
-anonymous. RSS also counts clean file-backed pages that the kernel can reclaim,
-so it is not the same as memory uniquely unavailable to other processes.
+running Node 20.20.0. Before 2.3.0 it held approximately 98–100 MiB RSS,
+including roughly 58–60 MiB of anonymous memory. Version 2.3.0 settled near
+110 MiB RSS with about 70 MiB anonymous after discovery and a read.
+
+With the 2.3.1 lazy runtime, the health-only process measured 60.4 MiB RSS and
+20.5 MiB anonymous. After `server/discover` and `tools/list`, it measured
+66.0 MiB RSS and 26.0 MiB anonymous without loading AJV. After a successful
+read-only `list_thermostats` call loaded AJV and two validators, it settled at
+78.6 MiB RSS and 37.0 MiB anonymous: approximately 31 MiB RSS and 33 MiB
+anonymous below 2.3.0's normal-use baseline. RSS also counts clean file-backed
+pages that the kernel can reclaim, so it is not the same as memory uniquely
+unavailable to other processes.
 
 At measurement time, Ecobee MCP was the Pi's only Node process. The host had
 approximately 6.1 GiB available, no swap use, and no observed memory pressure.

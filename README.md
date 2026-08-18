@@ -269,7 +269,7 @@ commands. See
 artifacts. Production contains no telemetry instrumentation or exporter.
 
 The current Node deployment is an intentional choice, not an unfinished port.
-Its steady production footprint is approximately 110 MiB RSS on the 8 GiB Pi,
+Its steady post-read footprint is approximately 79 MiB RSS on the 8 GiB Pi,
 which has ample available memory; V8 memory-saving flags caused material
 throughput regressions. [Future work](TODO.md) records the measured triggers,
 parity plan, and acceptance criteria for reconsidering a Rust implementation.

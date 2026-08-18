@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   RSS than cache-on, but representative read throughput fell by 42–86%.
 - The isolated Node adapter import fell from 36.0 to 25.6 MiB RSS and from
   13.43 to 6.87 MiB used heap.
+- On the deployed Pi, the service settles near 78.6 MiB RSS and 37.0 MiB
+  anonymous after discovery and a read, down from approximately 110 MiB RSS
+  and 70 MiB anonymous on 2.3.0.
 
 ### Tests
 
