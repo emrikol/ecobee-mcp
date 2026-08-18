@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] - 2026-08-17
+
+### Changed
+
+- Updated the pinned MCP SDK performance fork to commit
+  `b7608a8ebbd19c33089f2b616b80df7592c84fba` and switched every production
+  server import to its narrow `/runtime` entry.
+- The Node adapter no longer pulls in the package root. AJV and tool validators
+  now stay unloaded through `server/discover` and `tools/list`; the first tool
+  call loads AJV and compiles only that tool's input and output validators.
+- Added opt-in low-memory operation with `MCP_PERFORMANCE_CACHES=0`. Performance
+  caches remain enabled by default because disabling them materially reduces
+  read throughput.
+
+### Performance
+
+- Across seven fresh scale-2 runs, median post-warmup harness memory fell by
+  8.2 MiB RSS and 6.4 MiB used heap versus 2.3.0. Post-workload memory fell by
+  29.6 MiB RSS and 5.0 MiB used heap.
+- With caches disabled, the scale-1 workload used 71.6 MiB less post-workload
+  RSS than cache-on, but representative read throughput fell by 42–86%.
+- The isolated Node adapter import fell from 36.0 to 25.6 MiB RSS and from
+  13.43 to 6.87 MiB used heap.
+
+### Tests
+
+- Added application coverage proving the complete inventory and a deterministic
+  read remain identical with SDK performance caches disabled.
+- Re-ran the SDK's 588 core, server, and Node tests plus its deterministic
+  three-mode 20,000-request profiler.
+
 ## [2.3.0] - 2026-08-17
 
 ### Changed

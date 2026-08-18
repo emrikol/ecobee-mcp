@@ -70,6 +70,50 @@ code in the final profile. Avoiding `Object.entries()` inside the exact byte
 counter also removed 117 MiB of transient sampled allocation from an interim
 implementation.
 
+### 2.3.1 lazy SDK runtime and cache tradeoff
+
+Version 2.3.1 updates the performance fork to commit
+`b7608a8ebbd19c33089f2b616b80df7592c84fba` and uses
+`@modelcontextprotocol/server/runtime` throughout production. The Node adapter
+now uses the same narrow entry. AJV, the optional public protocol-schema
+catalog, and the unused 2025 wire era remain unloaded through
+`server/discover` and `tools/list`. The first `tools/call` dynamically loads AJV
+and compiles only the selected tool's input and output validators.
+
+The SDK exposes a per-server `performanceCaches` option. Ecobee keeps it enabled
+by default and maps `MCP_PERFORMANCE_CACHES=0` to the SDK's low-memory mode.
+Across seven fresh scale-1 processes, cache-off reduced post-workload RSS by
+71.6 MiB but changed live heap by less than 1 MiB after the first read because
+Node retains the dynamically imported AJV module. Recompiling validators
+reduced representative read throughput by 42–86%:
+
+| Scenario                      | Cache-on req/s | Cache-off req/s | Change |
+| ----------------------------- | -------------: | --------------: | -----: |
+| Tool discovery                |          847.9 |           833.0 |  -1.8% |
+| Cached thermostat status      |        2,728.2 |           418.2 | -84.7% |
+| Cached status, concurrent     |        3,977.5 |           551.4 | -86.1% |
+| Full-day unsummarized runtime |          342.4 |           198.9 | -41.9% |
+| 512 KiB chunked transport     |          965.4 |           977.4 |  +1.2% |
+
+The transport control remains effectively unchanged. Cache-off is therefore
+available for a hard memory ceiling or very low call volume, not recommended
+as the general deployment setting.
+
+The scale-2 cache-on harness uses less memory than 2.3.0 on the same Node
+22.19.0 macOS arm64 host:
+
+| Post-GC stage  | 2.3.0 RSS | 2.3.1 RSS |    Change | 2.3.0 heap | 2.3.1 heap |   Change |
+| -------------- | --------: | --------: | --------: | ---------: | ---------: | -------: |
+| After warmup   | 215.9 MiB | 207.7 MiB |  -8.2 MiB |   50.1 MiB |   43.7 MiB | -6.4 MiB |
+| After workload | 407.6 MiB | 378.1 MiB | -29.6 MiB |   52.7 MiB |   47.7 MiB | -5.0 MiB |
+
+An eleven-process import isolation measured the Node adapter at 25.6 MiB RSS
+and 6.87 MiB heap, down from 36.0 MiB RSS and 13.43 MiB heap. The SDK's own
+seven-run, 128-tool profiler confirmed zero AJV evaluations and validator
+compilations through `tools/list`; the first tool call evaluated AJV once and
+compiled exactly two validators. Its 20,000-call cache-off case compiled
+40,002 validators, explaining the intentional speed-versus-RSS tradeoff.
+
 ### 2.3.0 SDK hot-path fork
 
 Version 2.3.0 uses the performance fork of the official TypeScript SDK at
@@ -160,10 +204,12 @@ a short text pointer. This also reduced the representative status response by
 
 The original baseline flamegraph attributed about 30% of sampled self CPU to
 repeated Zod JSON Schema conversion. Version 2.1 cached that conversion.
-Version 2.2 removes the second schema implementation entirely: immutable JSON
-Schemas are compiled once through the official SDK, SDK-validated inputs are
-not validated again, and locally validated outputs are not immediately
-revalidated by the SDK.
+Version 2.2 removes the second schema implementation entirely. Version 2.3.1
+keeps immutable raw JSON Schemas cold through discovery, avoids revalidating
+SDK-validated inputs in the application callback, and lets the SDK perform the
+single structured-output validation before serialization. This preserves
+local schema enforcement while allowing the SDK's cache policy to own derived
+validator lifetime.
 
 The 2.1.1 follow-up profile identified three remaining application-owned
 costs: Zod output parsing and cloning, a full `JSON.stringify` used only to

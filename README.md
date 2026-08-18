@@ -10,7 +10,7 @@ dependencies.
 
 The pinned SDK packages are built from
 [`emrikol/typescript-sdk-mod-performance`](https://github.com/emrikol/typescript-sdk-mod-performance)
-commit `346fdcc5e6be5c2b2a92b9043dc1d7ec41d570f9`. Their committed tarballs,
+commit `b7608a8ebbd19c33089f2b616b80df7592c84fba`. Their committed tarballs,
 checksums, license, and rebuild instructions are documented in
 [vendor/README.md](vendor/README.md).
 
@@ -123,10 +123,14 @@ PORT=3000
 MCP_AUTH_TOKEN=some-random-secret-token
 CREDENTIALS_PATH=./credentials.json
 AUTH_MODE=readonly
+# MCP_PERFORMANCE_CACHES=0
 # ENABLE_PLUGINS=1
 ```
 
 `MCP_AUTH_TOKEN` is strongly recommended on any network-accessible deployment.
+SDK performance caches default to enabled. Set `MCP_PERFORMANCE_CACHES=0` only
+for a measured hard-memory constraint; it lowers allocator growth under heavy
+traffic but materially reduces tool-call throughput.
 
 ### 4. Run
 
